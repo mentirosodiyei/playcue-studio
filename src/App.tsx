@@ -1411,7 +1411,7 @@ const OperatorConsole: React.FC = () => {
           <div className="brand-logo">
             <span className="brand-dot" />
             <strong>CUEPRO</strong>
-            <span className="brand-sub">STUDIO v1.2.0</span>
+            <span className="brand-sub">STUDIO v1.2.1</span>
           </div>
 
           <input

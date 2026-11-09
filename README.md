@@ -1,8 +1,8 @@
-# CuePro Studio (v1.2.0)
+# CuePro Studio (v1.2.1)
 
 Reproductor profesional de vídeo para eventos en directo en Windows, inspirado en el flujo de trabajo y diseño de **Mitti** y **PlaybackPro Plus**.
 
-## Características principales (v1.2.0)
+## Características principales (v1.2.1)
 
 - **Doble Monitor en Cabina + Consola Central de Transición**:
   - `PREVIEW (PRV)` con recorte visual `IN / OUT`, avance fotograma a fotograma (`-1f / +1f`), escucha previa (*Audition*) y salto `-10s`.

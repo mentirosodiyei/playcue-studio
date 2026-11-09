@@ -3,7 +3,7 @@
   "name": "CuePro Studio",
   "shortname": "cuepro",
   "description": "Reproductor profesional de vídeo y Mosaico Multi-Salida para Windows (Mitti / PlaybackPro+ style)",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "license": "MIT",
   "repository": "git+https://github.com/mentirosodiyei/cuepro-studio.git",
   "bugs": "https://github.com/mentirosodiyei/cuepro-studio/issues",

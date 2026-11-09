@@ -131,7 +131,7 @@ function createMainWindow() {
     minWidth: 1180,
     minHeight: 740,
     backgroundColor: '#07090d',
-    title: 'CuePro Studio v1.2.0 — Broadcast Video Playback & Multi-Output Mosaic',
+    title: 'CuePro Studio v1.2.1 — Broadcast Video Playback & Multi-Output Mosaic',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
@@ -613,7 +613,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.2.0');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.2.1');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {
