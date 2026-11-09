@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncOutputState: (state: any) => ipcRenderer.send('sync-output-state', state),
   updateTelemetry: (telemetry: any) => ipcRenderer.send('update-telemetry', telemetry),
   getRemoteInfo: () => ipcRenderer.invoke('get-remote-info'),
+  installCompanionModule: () => ipcRenderer.invoke('install-companion-module'),
   selectVideoFiles: () => ipcRenderer.invoke('select-video-files'),
   relinkVideoFile: (oldName: string) => ipcRenderer.invoke('relink-video-file', oldName),
   probeMedia: (filePath: string) => ipcRenderer.invoke('probe-media', filePath),

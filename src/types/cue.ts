@@ -173,6 +173,7 @@ declare global {
       syncOutputState: (state: OutputSyncState) => void;
       updateTelemetry: (telemetry: any) => void;
       getRemoteInfo: () => Promise<{ oscPort: number; httpPort: number; ips: string[] }>;
+      installCompanionModule: () => Promise<{ ok: boolean; targetDir?: string; error?: string }>;
       selectVideoFiles: () => Promise<string[]>;
       relinkVideoFile: (oldName: string) => Promise<string | null>;
       probeMedia: (filePath: string) => Promise<any>;

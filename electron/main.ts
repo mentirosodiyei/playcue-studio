@@ -131,7 +131,7 @@ function createMainWindow() {
     minWidth: 1180,
     minHeight: 740,
     backgroundColor: '#07090d',
-    title: 'CuePro Studio v1.1.0 — Broadcast Video Playback & Multi-Output Mosaic',
+    title: 'CuePro Studio v1.2.0 — Broadcast Video Playback & Multi-Output Mosaic',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
@@ -608,6 +608,38 @@ ipcMain.on('update-telemetry', (_event, telemetry: Partial<LiveShowTelemetry>) =
 
 ipcMain.handle('get-remote-info', () => {
   return remoteServer?.getServerInfo() || { oscPort: 51000, httpPort: 51080, ips: ['127.0.0.1'] };
+});
+
+ipcMain.handle('install-companion-module', () => {
+  try {
+    const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.2.0');
+
+    let srcDir = path.join(__dirname, '../companion-module/dist-module');
+    if (!fs.existsSync(srcDir)) {
+      srcDir = srcDir.replace('app.asar', 'app.asar.unpacked');
+    }
+
+    if (!fs.existsSync(srcDir)) {
+      return { ok: false, error: 'No se encontró el paquete del módulo Companion.' };
+    }
+
+    fs.mkdirSync(path.join(targetDir, 'companion'), { recursive: true });
+    fs.copyFileSync(path.join(srcDir, 'main.js'), path.join(targetDir, 'main.js'));
+    fs.copyFileSync(path.join(srcDir, 'package.json'), path.join(targetDir, 'package.json'));
+    fs.copyFileSync(
+      path.join(srcDir, 'companion', 'manifest.json'),
+      path.join(targetDir, 'companion', 'manifest.json')
+    );
+    fs.copyFileSync(
+      path.join(srcDir, 'companion', 'HELP.md'),
+      path.join(targetDir, 'companion', 'HELP.md')
+    );
+
+    return { ok: true, targetDir };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
 });
 
 ipcMain.handle('select-video-files', async () => {

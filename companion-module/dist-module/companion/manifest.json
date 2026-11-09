@@ -1,0 +1,26 @@
+{
+  "id": "cuepro-studio",
+  "name": "CuePro Studio",
+  "shortname": "cuepro",
+  "description": "Reproductor profesional de vídeo y Mosaico Multi-Salida para Windows (Mitti / PlaybackPro+ style)",
+  "version": "1.2.0",
+  "license": "MIT",
+  "repository": "git+https://github.com/mentirosodiyei/cuepro-studio.git",
+  "bugs": "https://github.com/mentirosodiyei/cuepro-studio/issues",
+  "maintainers": [
+    {
+      "name": "CuePro Broadcast Systems",
+      "email": "mentiroso.correobasura@gmail.com"
+    }
+  ],
+  "legacyIds": [],
+  "runtime": {
+    "type": "node18",
+    "api": "nodejs-ipc",
+    "apiVersion": "1.8.0",
+    "entrypoint": "../main.js"
+  },
+  "manufacturer": "CuePro",
+  "products": ["CuePro Studio"],
+  "keywords": ["Video", "Playback", "Mitti", "PlaybackPro", "Broadcast", "Mosaic"]
+}

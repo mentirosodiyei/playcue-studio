@@ -10,18 +10,36 @@ export interface RemoteCommandPayload {
   timestamp: string;
 }
 
+export interface TelemetryCueItem {
+  index: number;
+  id: string;
+  cueNumber: string;
+  name: string;
+  duration: number;
+  transitionType: string;
+  transitionDuration: number;
+  endAction: string;
+}
+
 export interface LiveShowTelemetry {
   showName: string;
   isPlaying: boolean;
   isBlackout: boolean;
   isFrozen: boolean;
   isTestPattern: boolean;
+  showOSD: boolean;
   programCueId: string | null;
+  programIndex: number;
   programCueName: string;
   programCueNumber: string;
+  programEndAction: string;
   previewCueId: string | null;
+  previewIndex: number;
   previewCueName: string;
   previewCueNumber: string;
+  transitionType: string;
+  transitionDuration: number;
+  mosaicMode: string;
   elapsed: number;
   remaining: number;
   duration: number;
@@ -29,6 +47,7 @@ export interface LiveShowTelemetry {
   masterVolume: number;
   isMuted: boolean;
   outputOpen: boolean;
+  cues: TelemetryCueItem[];
 }
 
 function readOscString(buf: Buffer, offset: number): { value: string; nextOffset: number } {
@@ -37,7 +56,6 @@ function readOscString(buf: Buffer, offset: number): { value: string; nextOffset
     end++;
   }
   const value = buf.toString('utf8', offset, end);
-  // OSC strings are null-terminated and padded to 4-byte boundary
   const nextOffset = Math.ceil((end + 1) / 4) * 4;
   return { value, nextOffset };
 }
@@ -45,7 +63,6 @@ function readOscString(buf: Buffer, offset: number): { value: string; nextOffset
 export function parseOscPacket(buf: Buffer): { address: string; args: (number | string)[] } | null {
   try {
     if (buf.length < 4 || buf[0] !== 0x2f) {
-      // Must start with '/'
       return null;
     }
     const addrRes = readOscString(buf, 0);
@@ -54,7 +71,6 @@ export function parseOscPacket(buf: Buffer): { address: string; args: (number | 
     const args: (number | string)[] = [];
 
     if (offset < buf.length && buf[offset] === 0x2c) {
-      // Type tag string starts with ','
       const typeRes = readOscString(buf, offset);
       const types = typeRes.value.slice(1);
       offset = typeRes.nextOffset;
@@ -100,12 +116,19 @@ export class RemoteControlServer {
     isBlackout: false,
     isFrozen: false,
     isTestPattern: false,
+    showOSD: false,
     programCueId: null,
+    programIndex: 0,
     programCueName: '-',
     programCueNumber: '-',
+    programEndAction: 'hold',
     previewCueId: null,
+    previewIndex: 0,
     previewCueName: '-',
     previewCueNumber: '-',
+    transitionType: 'dissolve',
+    transitionDuration: 1.0,
+    mosaicMode: 'single',
     elapsed: 0,
     remaining: 0,
     duration: 0,
@@ -113,6 +136,7 @@ export class RemoteControlServer {
     masterVolume: 100,
     isMuted: false,
     outputOpen: false,
+    cues: [],
   };
 
   constructor(onCommand: (cmd: RemoteCommandPayload) => void) {
@@ -217,6 +241,9 @@ export class RemoteControlServer {
       case '/api/test-pattern':
       case '/testpattern':
         return make('testPattern');
+      case '/api/osd':
+      case '/osd':
+        return make('toggleOSD');
       case '/mitti/goto10':
       case '/pbp/goto10':
       case '/api/goto-end/10':
@@ -232,6 +259,8 @@ export class RemoteControlServer {
       case '/api/goto-end/30':
       case '/goto30':
         return make('gotoEnd', 30);
+      case '/api/goto-end':
+        return make('gotoEnd', Number(arg ?? 10));
       case '/mitti/rewind':
       case '/api/restart':
       case '/restart':
@@ -256,18 +285,42 @@ export class RemoteControlServer {
       case '/api/take-cue':
       case '/cue/take':
         return make('takeCueIndex', Number(arg ?? 1));
+      case '/api/cut-cue':
+      case '/cue/cut':
+        return make('cutCueIndex', Number(arg ?? 1));
+      case '/api/transition-type':
+      case '/transition/type':
+        return make('setTransitionType', String(arg ?? 'dissolve'));
+      case '/api/transition-duration':
+      case '/transition/duration':
+        return make('setTransitionDuration', Number(arg ?? 1.0));
+      case '/api/end-action':
+      case '/cue/end-action':
+        return make('setEndAction', String(arg ?? 'hold'));
+      case '/api/mosaic-mode':
+      case '/mosaic/mode':
+        return make('setMosaicMode', String(arg ?? 'single'));
       case '/mitti/audiovolume':
       case '/api/volume':
       case '/volume':
         return make('setVolume', Number(arg ?? 100));
+      case '/api/volume-delta':
+      case '/volume/delta':
+        return make('adjustVolume', Number(arg ?? 0));
+      case '/api/mute':
+      case '/mute':
+        return make('toggleMute');
       case '/api/output-toggle':
       case '/output/toggle':
         return make('toggleOutput');
       default: {
-        // Match /cue/3/take or /cue/3/load or /api/cue/3/take
         const takeMatch = clean.match(/\/cue\/(\d+)\/take/);
         if (takeMatch) {
           return make('takeCueIndex', parseInt(takeMatch[1], 10));
+        }
+        const cutMatch = clean.match(/\/cue\/(\d+)\/cut/);
+        if (cutMatch) {
+          return make('cutCueIndex', parseInt(cutMatch[1], 10));
         }
         const loadMatch = clean.match(/\/cue\/(\d+)\/load/);
         if (loadMatch) {
@@ -281,9 +334,7 @@ export class RemoteControlServer {
   private startOscServer() {
     try {
       const socket = dgram.createSocket('udp4');
-      socket.on('error', () => {
-        // Ignore bind error if port already in use
-      });
+      socket.on('error', () => {});
       socket.on('message', (msg) => {
         const parsed = parseOscPacket(msg);
         if (parsed) {
@@ -295,9 +346,7 @@ export class RemoteControlServer {
       });
       socket.bind(this.oscPort, '0.0.0.0');
       this.udpSocket = socket;
-    } catch {
-      // Fallback silently if UDP port restricted
-    }
+    } catch {}
   }
 
   private startHttpServer() {
@@ -322,7 +371,12 @@ export class RemoteControlServer {
           return;
         }
 
-        const valParam = urlObj.searchParams.get('value') ?? urlObj.searchParams.get('cue') ?? undefined;
+        const valParam =
+          urlObj.searchParams.get('value') ??
+          urlObj.searchParams.get('cue') ??
+          urlObj.searchParams.get('mode') ??
+          urlObj.searchParams.get('type') ??
+          undefined;
         const cmd = this.mapAddressToCommand(pathname, valParam, 'HTTP');
         if (cmd) {
           this.onCommand(cmd);
@@ -335,13 +389,9 @@ export class RemoteControlServer {
         res.end(JSON.stringify({ ok: false, error: 'Unknown endpoint', path: pathname }));
       });
 
-      server.on('error', () => {
-        // Ignore if port in use
-      });
+      server.on('error', () => {});
       server.listen(this.httpPort, '0.0.0.0');
       this.httpServer = server;
-    } catch {
-      // Fallback silently
-    }
+    } catch {}
   }
 }

@@ -665,24 +665,43 @@ const OperatorConsole: React.FC = () => {
         // Update Companion / HTTP telemetry every 10 frames
         if (syncSeqRef.current % 10 === 0) {
           const prvC = cuesRef.current.find((c) => c.id === previewCueId);
+          const pgmIdx = activeCue ? cuesRef.current.findIndex((c) => c.id === activeCue.id) + 1 : 0;
+          const prvIdx = prvC ? cuesRef.current.findIndex((c) => c.id === prvC.id) + 1 : 0;
           window.electronAPI.updateTelemetry({
             showName,
             isPlaying: !!(activeVideo && !activeVideo.paused),
             isBlackout: isBlackoutRef.current,
             isFrozen: isFrozenRef.current,
             isTestPattern: isTestPatternRef.current,
+            showOSD: showOSDRef.current,
             programCueId: activeCue?.id || null,
+            programIndex: pgmIdx,
             programCueName: activeCue?.name || '-',
             programCueNumber: activeCue?.cueNumber || '-',
+            programEndAction: activeCue?.endAction || 'hold',
             previewCueId: prvC?.id || null,
+            previewIndex: prvIdx,
             previewCueName: prvC?.name || '-',
             previewCueNumber: prvC?.cueNumber || '-',
+            transitionType: transTypeRef.current,
+            transitionDuration,
+            mosaicMode: mosaicConfig.mode,
             elapsed: activeVideo?.currentTime || 0,
             remaining: syncState.remainingTime,
             duration: activeCue?.duration || 0,
             totalCues: cuesRef.current.length,
             masterVolume: masterVolRef.current,
             isMuted: masterMutedRef.current,
+            cues: cuesRef.current.slice(0, 32).map((c, idx) => ({
+              index: idx + 1,
+              id: c.id,
+              cueNumber: c.cueNumber,
+              name: c.name,
+              duration: Math.max(0, (c.outPoint > c.inPoint ? c.outPoint : c.duration) - c.inPoint),
+              transitionType: c.transitionType,
+              transitionDuration: c.transitionDuration,
+              endAction: c.endAction,
+            })),
           });
         }
       }
@@ -863,6 +882,97 @@ const OperatorConsole: React.FC = () => {
           if (target) {
             triggerTakeCue(target.id, false);
           }
+          break;
+        }
+        case 'cutCueIndex': {
+          const idx = Math.max(0, Number(cmd.value) - 1);
+          const target = cuesRef.current[idx];
+          if (target) {
+            triggerTakeCue(target.id, true);
+          }
+          break;
+        }
+        case 'setTransitionType': {
+          const t = String(cmd.value || 'dissolve') as TransitionType;
+          setTransitionType(t);
+          transTypeRef.current = t;
+          if (previewCueId) {
+            setCues((prev) =>
+              prev.map((c) => (c.id === previewCueId ? { ...c, transitionType: t } : c))
+            );
+          }
+          break;
+        }
+        case 'setTransitionDuration': {
+          const d = Math.max(0.1, Number(cmd.value) || 1.0);
+          setTransitionDuration(d);
+          if (previewCueId) {
+            setCues((prev) =>
+              prev.map((c) => (c.id === previewCueId ? { ...c, transitionDuration: d } : c))
+            );
+          }
+          break;
+        }
+        case 'setEndAction': {
+          const act = String(cmd.value || 'hold') as EndAction;
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            endActionTriggeredRef.current = false;
+            setCues((prev) =>
+              prev.map((c) => (c.id === targetId ? { ...c, endAction: act } : c))
+            );
+          }
+          break;
+        }
+        case 'setMosaicMode': {
+          const m = String(cmd.value || 'single') as MosaicConfig['mode'];
+          setMosaicConfig((prev) => {
+            const next = { ...prev, mode: m };
+            if (window.electronAPI && outputOpen) {
+              window.electronAPI.setOutputWindow({
+                open: true,
+                displayId: next.display1Id ?? selectedDisplayId,
+                windowed: false,
+                mosaicConfig: next,
+              });
+            }
+            return next;
+          });
+          break;
+        }
+        case 'toggleOutput': {
+          if (window.electronAPI) {
+            window.electronAPI
+              .setOutputWindow({
+                open: !outputOpen,
+                displayId: mosaicConfig.display1Id ?? selectedDisplayId,
+                windowed: false,
+                mosaicConfig,
+              })
+              .then((res) => {
+                setOutputOpen(res.isOpen);
+                setIsSpannedActive(!!res.isSpanned);
+              });
+          }
+          break;
+        }
+        case 'toggleOSD': {
+          setShowOSD((prev) => {
+            showOSDRef.current = !prev;
+            return !prev;
+          });
+          break;
+        }
+        case 'toggleMute': {
+          setIsMasterMuted((prev) => {
+            masterMutedRef.current = !prev;
+            return !prev;
+          });
+          break;
+        }
+        case 'adjustVolume': {
+          const delta = Number(cmd.value) || 0;
+          setMasterVolume((prev) => Math.max(0, Math.min(125, prev + delta)));
           break;
         }
         case 'setVolume':
@@ -1301,7 +1411,7 @@ const OperatorConsole: React.FC = () => {
           <div className="brand-logo">
             <span className="brand-dot" />
             <strong>CUEPRO</strong>
-            <span className="brand-sub">STUDIO v1.1.0</span>
+            <span className="brand-sub">STUDIO v1.2.0</span>
           </div>
 
           <input

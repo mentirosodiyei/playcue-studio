@@ -1,7 +1,7 @@
 {
   "name": "cuepro-studio",
   "productName": "CuePro Studio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "packageManager": "pnpm@9.15.4",
   "description": "Reproductor profesional de vídeo para eventos en directo en Windows (Inspirado en Mitti y PlaybackPro Plus)",
   "author": "CuePro Broadcast Systems",
@@ -22,6 +22,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@companion-module/base": "1.8.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -38,11 +39,13 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
-      "node_modules/ffprobe-static/**/*"
+      "node_modules/ffprobe-static/**/*",
+      "companion-module/dist-module/**/*"
     ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "companion-module/dist-module/**/*",
       "node_modules/ffmpeg-static/**/*",
       "node_modules/ffprobe-static/**/*",
       "package.json"

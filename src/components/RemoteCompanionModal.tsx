@@ -16,6 +16,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
   logs,
 }) => {
   const [copiedText, setCopiedText] = React.useState<string | null>(null);
+  const [installMsg, setInstallMsg] = React.useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -23,6 +24,16 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
     navigator.clipboard.writeText(txt);
     setCopiedText(txt);
     setTimeout(() => setCopiedText(null), 1500);
+  };
+
+  const handleInstallModule = async () => {
+    if (!window.electronAPI) return;
+    const res = await window.electronAPI.installCompanionModule();
+    if (res.ok) {
+      setInstallMsg(`Módulo instalado en: ${res.targetDir} (Reinicia o recarga módulos en Companion)`);
+    } else {
+      setInstallMsg(`Error: ${res.error}`);
+    }
   };
 
   const primaryIp = remoteInfo.ips.find((ip) => ip !== '127.0.0.1') || '127.0.0.1';
@@ -72,6 +83,43 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
         </div>
 
         <div className="modal-body">
+          {/* Native Companion Module Auto-Installer Banner */}
+          <div
+            style={{
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid #10b981',
+              borderRadius: 6,
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <div>
+              <strong style={{ color: '#34d399', fontSize: 12 }}>
+                MÓDULO NATIVO BITFOCUS COMPANION (CuePro Studio v1.2.0)
+              </strong>
+              <div style={{ color: '#cbd5e1', fontSize: 11, marginTop: 2 }}>
+                Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a
+                Programa (PGM con transición de la app), Botón TAKE, Cuenta Atrás con colores,
+                Transiciones, End-Actions y Mosaico 2×1/1×2.
+              </div>
+              {installMsg && (
+                <div style={{ color: '#fbbf24', fontSize: 11, marginTop: 4, fontWeight: 700 }}>
+                  {installMsg}
+                </div>
+              )}
+            </div>
+            <button
+              className="toolbar-action-btn primary"
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={handleInstallModule}
+            >
+              Instalar en Companion Local
+            </button>
+          </div>
+
           {/* Server Status Banner */}
           <div className="remote-status-cards">
             <div className="remote-card">
