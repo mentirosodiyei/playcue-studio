@@ -1,0 +1,81 @@
+{
+  "name": "cuepro-studio",
+  "productName": "CuePro Studio",
+  "version": "1.1.0",
+  "packageManager": "pnpm@9.15.4",
+  "description": "Reproductor profesional de vídeo para eventos en directo en Windows (Inspirado en Mitti y PlaybackPro Plus)",
+  "author": "CuePro Broadcast Systems",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build:vite": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:vite && npm run build:electron",
+    "dist": "electron-builder --win --x64",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.cuepro.studio",
+    "productName": "CuePro Studio",
+    "copyright": "Copyright © 2026 CuePro Studio",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/ffprobe-static/**/*"
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/ffprobe-static/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CuePro Studio",
+      "artifactName": "CuePro_Studio_Setup_${version}.exe"
+    },
+    "portable": {
+      "artifactName": "CuePro_Studio_Portable_${version}.exe"
+    }
+  }
+}
