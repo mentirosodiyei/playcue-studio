@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Play,
   Pause,
@@ -16,6 +16,10 @@ import {
   SkipForward,
   StepBack,
   StepForward,
+  ZoomIn,
+  ZoomOut,
+  Sparkles,
+  Maximize2,
 } from 'lucide-react';
 import {
   VideoCue,
@@ -23,11 +27,19 @@ import {
   EndAction,
   DeckSyncPayload,
   MosaicConfig,
+  ScaleMode,
+  AspectRatioMode,
 } from '../types/cue';
 import {
   formatTimecode,
   END_ACTION_LABELS,
+  toMediaUrl,
 } from '../utils/timecode';
+import {
+  ASPECT_RATIO_OPTIONS,
+  getForegroundVideoStyle,
+  getBackgroundBlurVideoStyle,
+} from '../utils/videoGeometry';
 import { TestPatternCanvas } from './TestPatternCanvas';
 
 interface DualMonitorsProps {
@@ -74,6 +86,8 @@ interface DualMonitorsProps {
   onSeekPgm: (time: number) => void;
   onPgmGotoEnd: (secBeforeEnd: number) => void;
   onChangePgmEndAction: (action: EndAction) => void;
+  // Cue geometry live update
+  onUpdateCue?: (id: string, patch: Partial<VideoCue>) => void;
   // Audio Master
   masterVolume: number;
   isMasterMuted: boolean;
@@ -126,23 +140,90 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
   onSeekPgm,
   onPgmGotoEnd,
   onChangePgmEndAction,
+  onUpdateCue,
   masterVolume,
   isMasterMuted,
   onChangeMasterVolume,
   onToggleMasterMute,
   vuLevels,
   mosaicConfig,
-  totalCanvasWidth = 1920,
-  totalCanvasHeight = 1080,
+  totalCanvasWidth = 2560,
+  totalCanvasHeight = 1440,
 }) => {
-  const getDeckStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
-    const objectFit =
-      deck.scaleMode === 'fill' ? 'cover' : deck.scaleMode === 'stretch' ? 'fill' : 'contain';
-    const transforms: string[] = [];
-    if (deck.rotation) transforms.push(`rotate(${deck.rotation}deg)`);
-    if (deck.flipH) transforms.push('scaleX(-1)');
-    if (deck.flipV) transforms.push('scaleY(-1)');
+  const prvBgVideoRef = useRef<HTMLVideoElement | null>(null);
+  const pgmBgVideoARef = useRef<HTMLVideoElement | null>(null);
+  const pgmBgVideoBRef = useRef<HTMLVideoElement | null>(null);
 
+  // Sync Preview Background Blur video with Preview Foreground video
+  useEffect(() => {
+    const bgV = prvBgVideoRef.current;
+    if (!bgV) return;
+    if (!previewCue || !previewCue.bgBlurEnabled) {
+      if (bgV.getAttribute('src')) {
+        bgV.removeAttribute('src');
+        bgV.load();
+      }
+      return;
+    }
+    const url = toMediaUrl(previewCue.proxyPath || previewCue.filePath);
+    if (url && bgV.getAttribute('data-cue-id') !== previewCue.id) {
+      bgV.setAttribute('data-cue-id', previewCue.id);
+      bgV.src = url;
+      bgV.currentTime = prvTime;
+    }
+    bgV.playbackRate = previewCue.playbackRate || 1;
+    if (Math.abs((bgV.currentTime || 0) - prvTime) > 0.06) {
+      try {
+        bgV.currentTime = prvTime;
+      } catch {}
+    }
+    if (prvPlaying && bgV.paused) {
+      bgV.play().catch(() => {});
+    } else if (!prvPlaying && !bgV.paused) {
+      bgV.pause();
+    }
+  }, [previewCue, prvTime, prvPlaying]);
+
+  // Sync Program Deck A & Deck B Background Blur videos with Foreground videos
+  useEffect(() => {
+    const syncBg = (bgV: HTMLVideoElement | null, deck: DeckSyncPayload) => {
+      if (!bgV) return;
+      const shouldShow = !!(deck.bgBlurEnabled && deck.mediaUrl);
+      if (!shouldShow) {
+        if (bgV.getAttribute('data-url')) {
+          bgV.removeAttribute('data-url');
+          bgV.removeAttribute('src');
+          bgV.load();
+        }
+        return;
+      }
+      if (bgV.getAttribute('data-url') !== deck.mediaUrl && deck.mediaUrl) {
+        bgV.setAttribute('data-url', deck.mediaUrl);
+        bgV.src = deck.mediaUrl;
+        bgV.currentTime = deck.currentTime || 0;
+      }
+      bgV.playbackRate = deck.playbackRate || 1;
+      if (isFrozen) {
+        if (!bgV.paused) bgV.pause();
+        return;
+      }
+      if (Math.abs((bgV.currentTime || 0) - (deck.currentTime || 0)) > 0.06) {
+        try {
+          bgV.currentTime = deck.currentTime || 0;
+        } catch {}
+      }
+      if (deck.isPlaying && bgV.paused) {
+        bgV.play().catch(() => {});
+      } else if (!deck.isPlaying && !bgV.paused) {
+        bgV.pause();
+      }
+    };
+
+    syncBg(pgmBgVideoARef.current, deckA);
+    syncBg(pgmBgVideoBRef.current, deckB);
+  }, [deckA, deckB, isFrozen]);
+
+  const getDeckWrapperStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
     let clipPath = 'none';
     if (transitionType === 'wipe' && transitionProgress < 1) {
       if (activeDeck === deckKey) {
@@ -156,9 +237,8 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
       inset: 0,
       width: '100%',
       height: '100%',
-      objectFit,
+      overflow: 'hidden',
       opacity: deck.mediaUrl ? Math.max(0, Math.min(1, deck.opacity)) : 0,
-      transform: transforms.length > 0 ? transforms.join(' ') : undefined,
       clipPath,
       zIndex: activeDeck === deckKey ? 2 : 1,
       backgroundColor: 'transparent',
@@ -176,6 +256,101 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
   const isWarning = pgmPlaying && pgmRemaining <= 15 && pgmRemaining > 5;
   const isCritical = pgmPlaying && pgmRemaining <= 5;
+
+  const renderQuickGeometryBar = (cue: VideoCue | null, labelPrefix: string) => {
+    if (!cue || !onUpdateCue) return null;
+    const zoomVal = cue.zoom ?? 100;
+    const arVal = cue.aspectRatio ?? 'native';
+    const blurOn = !!cue.bgBlurEnabled;
+    const blurAmt = cue.bgBlurAmount ?? 90;
+
+    return (
+      <div className="quick-geometry-bar">
+        <div className="qg-group" title="Modo de ajuste a la pantalla de salida">
+          {(
+            [
+              { id: 'fit', label: 'FIT' },
+              { id: 'fill', label: 'FILL' },
+              { id: 'stretch', label: 'STRETCH' },
+            ] as { id: ScaleMode; label: string }[]
+          ).map((s) => (
+            <button
+              key={s.id}
+              className={`qg-btn ${cue.scaleMode === s.id ? 'active' : ''}`}
+              onClick={() => onUpdateCue(cue.id, { scaleMode: s.id })}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="qg-group" title={`${labelPrefix}: Relación de aspecto (Aspect Ratio)`}>
+          <Maximize2 size={11} className="qg-icon" />
+          <select
+            className="qg-select"
+            value={arVal}
+            onChange={(e) =>
+              onUpdateCue(cue.id, { aspectRatio: e.target.value as AspectRatioMode })
+            }
+          >
+            {ASPECT_RATIO_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                AR: {opt.shortLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="qg-group" title="Ampliar / Zoom de imagen en salida">
+          <button
+            className="qg-btn icon"
+            onClick={() => onUpdateCue(cue.id, { zoom: Math.max(50, zoomVal - 10) })}
+            title="Reducir Zoom (-10%)"
+          >
+            <ZoomOut size={12} />
+          </button>
+          <button
+            className={`qg-btn zoom-readout ${zoomVal !== 100 ? 'active-amber' : ''}`}
+            onClick={() =>
+              onUpdateCue(cue.id, {
+                zoom: 100,
+                scaleX: 100,
+                scaleY: 100,
+                offsetX: 0,
+                offsetY: 0,
+              })
+            }
+            title="Clic para resetear Zoom a 100%"
+          >
+            {zoomVal}%
+          </button>
+          <button
+            className="qg-btn icon"
+            onClick={() => onUpdateCue(cue.id, { zoom: Math.min(300, zoomVal + 10) })}
+            title="Ampliar Zoom (+10%)"
+          >
+            <ZoomIn size={12} />
+          </button>
+        </div>
+
+        <button
+          className={`qg-btn blur-toggle-btn ${blurOn ? 'active-purple' : ''}`}
+          onClick={() =>
+            onUpdateCue(cue.id, {
+              bgBlurEnabled: !blurOn,
+              bgBlurAmount: cue.bgBlurAmount ?? 90,
+              bgBlurBrightness: cue.bgBlurBrightness ?? 75,
+              bgBlurZoom: cue.bgBlurZoom ?? 125,
+            })
+          }
+          title="Activar capa inferior con el vídeo ampliado a pantalla completa y desenfoque Blur al 90% debajo del vídeo original"
+        >
+          <Sparkles size={12} />
+          <span>{blurOn ? `BLUR ${blurAmt}% ON` : 'FONDO BLUR 90%'}</span>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="dual-monitors-grid">
@@ -212,19 +387,44 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
         {/* Preview Video Viewport */}
         <div className="monitor-viewport prv-viewport">
+          {/* Preview Background Blur Layer */}
+          <video
+            ref={prvBgVideoRef}
+            muted
+            playsInline
+            style={{
+              ...getBackgroundBlurVideoStyle({
+                bgBlurAmount: previewCue?.bgBlurAmount ?? 90,
+                bgBlurBrightness: previewCue?.bgBlurBrightness ?? 75,
+                bgBlurZoom: previewCue?.bgBlurZoom ?? 125,
+                rotation: previewCue?.rotation,
+                flipH: previewCue?.flipH,
+                flipV: previewCue?.flipV,
+              }),
+              display: previewCue && previewCue.bgBlurEnabled ? 'block' : 'none',
+            }}
+          />
+
+          {/* Preview Foreground Video Layer */}
           <video
             ref={previewVideoRef}
             muted={!prvAudition}
             playsInline
             style={{
-              width: '100%',
-              height: '100%',
-              objectFit:
-                previewCue?.scaleMode === 'fill'
-                  ? 'cover'
-                  : previewCue?.scaleMode === 'stretch'
-                  ? 'fill'
-                  : 'contain',
+              ...getForegroundVideoStyle({
+                scaleMode: previewCue?.scaleMode || 'fit',
+                aspectRatio: previewCue?.aspectRatio || 'native',
+                zoom: previewCue?.zoom ?? 100,
+                scaleX: previewCue?.scaleX ?? 100,
+                scaleY: previewCue?.scaleY ?? 100,
+                offsetX: previewCue?.offsetX ?? 0,
+                offsetY: previewCue?.offsetY ?? 0,
+                rotation: previewCue?.rotation || 0,
+                flipH: previewCue?.flipH || false,
+                flipV: previewCue?.flipV || false,
+                canvasWidth: totalCanvasWidth,
+                canvasHeight: totalCanvasHeight,
+              }),
               display: previewCue ? 'block' : 'none',
             }}
           />
@@ -247,6 +447,9 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             OUT {formatTimecode(prvOut, previewCue?.fps || 25)}
           </div>
         </div>
+
+        {/* Quick Geometry & Background Blur Bar for Preview */}
+        {renderQuickGeometryBar(previewCue, 'PRV')}
 
         {/* Preview Timeline with In/Out Trim Bar */}
         <div className="timeline-container">
@@ -505,18 +708,83 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
           {/* Program Dual-Deck Viewport */}
           <div className="monitor-viewport pgm-viewport">
-            <video
-              ref={pgmVideoARef}
-              playsInline
-              crossOrigin="anonymous"
-              style={getDeckStyle(deckA, 'A')}
-            />
-            <video
-              ref={pgmVideoBRef}
-              playsInline
-              crossOrigin="anonymous"
-              style={getDeckStyle(deckB, 'B')}
-            />
+            {/* DECK A */}
+            <div style={getDeckWrapperStyle(deckA, 'A')}>
+              <video
+                ref={pgmBgVideoARef}
+                muted
+                playsInline
+                style={{
+                  ...getBackgroundBlurVideoStyle({
+                    bgBlurAmount: deckA.bgBlurAmount,
+                    bgBlurBrightness: deckA.bgBlurBrightness,
+                    bgBlurZoom: deckA.bgBlurZoom,
+                    rotation: deckA.rotation,
+                    flipH: deckA.flipH,
+                    flipV: deckA.flipV,
+                  }),
+                  display: deckA.bgBlurEnabled && deckA.mediaUrl ? 'block' : 'none',
+                }}
+              />
+              <video
+                ref={pgmVideoARef}
+                playsInline
+                crossOrigin="anonymous"
+                style={getForegroundVideoStyle({
+                  scaleMode: deckA.scaleMode,
+                  aspectRatio: deckA.aspectRatio,
+                  zoom: deckA.zoom,
+                  scaleX: deckA.scaleX,
+                  scaleY: deckA.scaleY,
+                  offsetX: deckA.offsetX,
+                  offsetY: deckA.offsetY,
+                  rotation: deckA.rotation,
+                  flipH: deckA.flipH,
+                  flipV: deckA.flipV,
+                  canvasWidth: totalCanvasWidth,
+                  canvasHeight: totalCanvasHeight,
+                })}
+              />
+            </div>
+
+            {/* DECK B */}
+            <div style={getDeckWrapperStyle(deckB, 'B')}>
+              <video
+                ref={pgmBgVideoBRef}
+                muted
+                playsInline
+                style={{
+                  ...getBackgroundBlurVideoStyle({
+                    bgBlurAmount: deckB.bgBlurAmount,
+                    bgBlurBrightness: deckB.bgBlurBrightness,
+                    bgBlurZoom: deckB.bgBlurZoom,
+                    rotation: deckB.rotation,
+                    flipH: deckB.flipH,
+                    flipV: deckB.flipV,
+                  }),
+                  display: deckB.bgBlurEnabled && deckB.mediaUrl ? 'block' : 'none',
+                }}
+              />
+              <video
+                ref={pgmVideoBRef}
+                playsInline
+                crossOrigin="anonymous"
+                style={getForegroundVideoStyle({
+                  scaleMode: deckB.scaleMode,
+                  aspectRatio: deckB.aspectRatio,
+                  zoom: deckB.zoom,
+                  scaleX: deckB.scaleX,
+                  scaleY: deckB.scaleY,
+                  offsetX: deckB.offsetX,
+                  offsetY: deckB.offsetY,
+                  rotation: deckB.rotation,
+                  flipH: deckB.flipH,
+                  flipV: deckB.flipV,
+                  canvasWidth: totalCanvasWidth,
+                  canvasHeight: totalCanvasHeight,
+                })}
+              />
+            </div>
 
             {isTestPattern && (
               <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
@@ -570,6 +838,9 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               {formatTimecode(pgmOut, programCue?.fps || 25)}
             </div>
           </div>
+
+          {/* Quick Geometry & Background Blur Bar for Live Program */}
+          {renderQuickGeometryBar(programCue, 'PGM')}
 
           {/* Program Timeline Scrubber */}
           <div className="timeline-container">

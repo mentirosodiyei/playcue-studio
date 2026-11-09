@@ -4,6 +4,17 @@ export type TransitionType = 'cut' | 'dissolve' | 'dipToBlack' | 'wipe';
 
 export type ScaleMode = 'fit' | 'fill' | 'stretch';
 
+export type AspectRatioMode =
+  | 'native'
+  | 'output'
+  | '16:9'
+  | '16:10'
+  | '4:3'
+  | '21:9'
+  | '32:9'
+  | '9:16'
+  | '1:1';
+
 export type CueColor = 'none' | 'red' | 'amber' | 'emerald' | 'blue' | 'purple' | 'cyan';
 
 export type MosaicMode = 'single' | 'horizontal_2x1' | 'vertical_1x2' | 'mirror_2x';
@@ -55,6 +66,17 @@ export interface VideoCue {
   audioFadeOut: number; // seconds
   // Video & Geometry settings
   scaleMode: ScaleMode;
+  aspectRatio?: AspectRatioMode; // 'native' | 'output' | '16:9' | '4:3' etc.
+  zoom?: number; // 50 to 300 (%) — default 100
+  scaleX?: number; // 50 to 200 (%) — default 100
+  scaleY?: number; // 50 to 200 (%) — default 100
+  offsetX?: number; // -50 to +50 (%) — default 0
+  offsetY?: number; // -50 to +50 (%) — default 0
+  // Background Blur Fill Layer (for videos that don't fill the screen)
+  bgBlurEnabled?: boolean;
+  bgBlurAmount?: number; // 0 to 100 (%) — default 90
+  bgBlurBrightness?: number; // 20 to 100 (%) — default 75
+  bgBlurZoom?: number; // 100 to 200 (%) — default 125
   opacity: number; // 0 to 100
   rotation: 0 | 90 | 180 | 270;
   flipH: boolean;
@@ -101,6 +123,16 @@ export interface DeckSyncPayload {
   isPlaying: boolean;
   playbackRate: number;
   scaleMode: ScaleMode;
+  aspectRatio: AspectRatioMode;
+  zoom: number;
+  scaleX: number;
+  scaleY: number;
+  offsetX: number;
+  offsetY: number;
+  bgBlurEnabled: boolean;
+  bgBlurAmount: number;
+  bgBlurBrightness: number;
+  bgBlurZoom: number;
   opacity: number; // combined clip opacity * fade envelope * transition alpha (0..1)
   rotation: 0 | 90 | 180 | 270;
   flipH: boolean;

@@ -26528,6 +26528,44 @@ var CueProStudioInstance = class extends import_base.InstanceBase {
           else if (op === "up5") this.sendCommand("/api/volume-delta?value=5");
           else if (op === "down5") this.sendCommand("/api/volume-delta?value=-5");
         }
+      },
+      video_geometry: {
+        name: "V\xEDdeo Salida: Fondo Blur 90%, Escalado (Fit/Fill/Stretch), Aspect Ratio y Zoom",
+        options: [
+          {
+            type: "dropdown",
+            id: "op",
+            label: "Ajuste de Salida",
+            default: "toggle_blur",
+            choices: [
+              { id: "toggle_blur", label: "Activar / Desactivar Capa Fondo Ampliado + Blur 90%" },
+              { id: "scale_fit", label: "Modo Escala: FIT (Ajustar sin cortar)" },
+              { id: "scale_fill", label: "Modo Escala: FILL (Llenar pantalla)" },
+              { id: "scale_stretch", label: "Modo Escala: STRETCH (Estirar a pantalla)" },
+              { id: "ar_native", label: "Aspect Ratio: Nativo Original" },
+              { id: "ar_output", label: "Aspect Ratio: Adaptar a Pantalla Salida" },
+              { id: "ar_16_9", label: "Aspect Ratio: 16:9" },
+              { id: "ar_4_3", label: "Aspect Ratio: 4:3" },
+              { id: "zoom_in", label: "Ampliar Zoom (+10%)" },
+              { id: "zoom_out", label: "Reducir Zoom (-10%)" },
+              { id: "zoom_reset", label: "Resetear Zoom (100%)" }
+            ]
+          }
+        ],
+        callback: (ev) => {
+          const op = String(ev.options.op);
+          if (op === "toggle_blur") this.sendCommand("/api/blur-toggle");
+          else if (op === "scale_fit") this.sendCommand("/api/scale-mode?value=fit");
+          else if (op === "scale_fill") this.sendCommand("/api/scale-mode?value=fill");
+          else if (op === "scale_stretch") this.sendCommand("/api/scale-mode?value=stretch");
+          else if (op === "ar_native") this.sendCommand("/api/aspect-ratio?value=native");
+          else if (op === "ar_output") this.sendCommand("/api/aspect-ratio?value=output");
+          else if (op === "ar_16_9") this.sendCommand("/api/aspect-ratio?value=16:9");
+          else if (op === "ar_4_3") this.sendCommand("/api/aspect-ratio?value=4:3");
+          else if (op === "zoom_in") this.sendCommand("/api/zoom-delta?value=10");
+          else if (op === "zoom_out") this.sendCommand("/api/zoom-delta?value=-10");
+          else if (op === "zoom_reset") this.sendCommand("/api/zoom?value=100");
+        }
       }
     });
   }
@@ -27236,6 +27274,71 @@ TRANS: ${dur}s`,
         bgcolor: (0, import_base.combineRgb)(15, 23, 42)
       },
       steps: [{ down: [{ actionId: "audio_control", options: { op: "down5" } }], up: [] }],
+      feedbacks: []
+    };
+    presets["bg_blur_90"] = {
+      type: "button",
+      category: "5. Salidas, Mosaico 4K, Emergencia y Audio",
+      name: "Activar / Desactivar Capa Fondo Ampliado + Blur 90%",
+      style: {
+        text: "FONDO\nBLUR 90%",
+        size: "14",
+        color: (0, import_base.combineRgb)(233, 213, 255),
+        bgcolor: (0, import_base.combineRgb)(59, 7, 100)
+      },
+      steps: [{ down: [{ actionId: "video_geometry", options: { op: "toggle_blur" } }], up: [] }],
+      feedbacks: []
+    };
+    presets["scale_fill"] = {
+      type: "button",
+      category: "5. Salidas, Mosaico 4K, Emergencia y Audio",
+      name: "Modo Escala: FILL (Llenar Pantalla)",
+      style: {
+        text: "ESCALA\nFILL FULL",
+        size: "14",
+        color: (0, import_base.combineRgb)(186, 230, 253),
+        bgcolor: (0, import_base.combineRgb)(12, 74, 110)
+      },
+      steps: [{ down: [{ actionId: "video_geometry", options: { op: "scale_fill" } }], up: [] }],
+      feedbacks: []
+    };
+    presets["scale_fit"] = {
+      type: "button",
+      category: "5. Salidas, Mosaico 4K, Emergencia y Audio",
+      name: "Modo Escala: FIT (Formato Original)",
+      style: {
+        text: "ESCALA\nFIT ORIG",
+        size: "14",
+        color: (0, import_base.combineRgb)(226, 232, 240),
+        bgcolor: (0, import_base.combineRgb)(30, 41, 59)
+      },
+      steps: [{ down: [{ actionId: "video_geometry", options: { op: "scale_fit" } }], up: [] }],
+      feedbacks: []
+    };
+    presets["zoom_in_10"] = {
+      type: "button",
+      category: "5. Salidas, Mosaico 4K, Emergencia y Audio",
+      name: "Ampliar Zoom en Salida (+10%)",
+      style: {
+        text: "ZOOM\n+10%",
+        size: "14",
+        color: (0, import_base.combineRgb)(110, 231, 183),
+        bgcolor: (0, import_base.combineRgb)(15, 23, 42)
+      },
+      steps: [{ down: [{ actionId: "video_geometry", options: { op: "zoom_in" } }], up: [] }],
+      feedbacks: []
+    };
+    presets["zoom_out_10"] = {
+      type: "button",
+      category: "5. Salidas, Mosaico 4K, Emergencia y Audio",
+      name: "Reducir Zoom en Salida (-10%)",
+      style: {
+        text: "ZOOM\n-10%",
+        size: "14",
+        color: (0, import_base.combineRgb)(252, 211, 77),
+        bgcolor: (0, import_base.combineRgb)(15, 23, 42)
+      },
+      steps: [{ down: [{ actionId: "video_geometry", options: { op: "zoom_out" } }], up: [] }],
       feedbacks: []
     };
     this.setPresetDefinitions(presets);

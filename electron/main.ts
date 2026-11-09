@@ -131,7 +131,7 @@ function createMainWindow() {
     minWidth: 1180,
     minHeight: 740,
     backgroundColor: '#07090d',
-    title: 'CuePro Studio v1.2.1 — Broadcast Video Playback & Multi-Output Mosaic',
+    title: 'CuePro Studio v1.3.0 — Broadcast Video Playback & Multi-Output Mosaic',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
@@ -198,7 +198,16 @@ function spawnSingleOutputBrowserWindow(
     win.setAlwaysOnTop(true, 'screen-saver');
     // Enforce exact bounds after creation for spanned multi-monitor windows on Windows
     win.setBounds(bounds);
+    if (useFullscreen && !useBorderlessSpan) {
+      win.setFullScreen(true);
+    }
   }
+
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && (input.key === 'Escape' || input.key === 'F11')) {
+      closeOutputWindows();
+    }
+  });
 
   const encodedViewport = encodeURIComponent(JSON.stringify(viewportPayload));
   win.loadURL(getAppUrl(`output?viewport=${encodedViewport}`));
@@ -248,8 +257,7 @@ function openOutputWindows(
     currentTotalHeight = target.physicalHeight;
     currentIsSpanned = false;
 
-    const isExternal = !target.isPrimary;
-    const useFullscreen = !windowedMode && (isExternal || displays.length > 1);
+    const useFullscreen = !windowedMode;
 
     let winBounds = {
       x: useFullscreen ? target.x : target.x + 80,
@@ -613,7 +621,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.2.1');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.3.0');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {

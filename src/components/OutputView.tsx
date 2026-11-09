@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { OutputSyncState, DeckSyncPayload, MosaicSliceViewport } from '../types/cue';
 import { TestPatternCanvas } from './TestPatternCanvas';
 import { formatTimecode } from '../utils/timecode';
+import {
+  getForegroundVideoStyle,
+  getBackgroundBlurVideoStyle,
+} from '../utils/videoGeometry';
 
 const DEFAULT_DECK: DeckSyncPayload = {
   cueId: null,
@@ -10,6 +14,16 @@ const DEFAULT_DECK: DeckSyncPayload = {
   isPlaying: false,
   playbackRate: 1,
   scaleMode: 'fit',
+  aspectRatio: 'native',
+  zoom: 100,
+  scaleX: 100,
+  scaleY: 100,
+  offsetX: 0,
+  offsetY: 0,
+  bgBlurEnabled: false,
+  bgBlurAmount: 90,
+  bgBlurBrightness: 75,
+  bgBlurZoom: 125,
   opacity: 0,
   rotation: 0,
   flipH: false,
@@ -31,12 +45,12 @@ function parseViewportFromHash(): MosaicSliceViewport {
   return {
     mode: 'single',
     role: 'full',
-    canvasWidth: 1920,
-    canvasHeight: 1080,
+    canvasWidth: 2560,
+    canvasHeight: 1440,
     sliceX: 0,
     sliceY: 0,
-    sliceWidth: 1920,
-    sliceHeight: 1080,
+    sliceWidth: 2560,
+    sliceHeight: 1440,
     label: 'OUTPUT',
   };
 }
@@ -62,8 +76,13 @@ export const OutputView: React.FC = () => {
 
   const videoARef = useRef<HTMLVideoElement | null>(null);
   const videoBRef = useRef<HTMLVideoElement | null>(null);
+  const bgVideoARef = useRef<HTMLVideoElement | null>(null);
+  const bgVideoBRef = useRef<HTMLVideoElement | null>(null);
+
   const lastUrlA = useRef<string | null>(null);
   const lastUrlB = useRef<string | null>(null);
+  const lastBgUrlA = useRef<string | null>(null);
+  const lastBgUrlB = useRef<string | null>(null);
 
   useEffect(() => {
     if (!window.electronAPI) return;
@@ -73,19 +92,33 @@ export const OutputView: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Sync Deck A & Deck B video elements with sub-frame drift lock
+  // Allow pressing ESC on the output window to close it if testing on a single screen
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape' && window.electronAPI) {
+        window.electronAPI.setOutputWindow({ open: false });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Sync Deck A & Deck B foreground + background blur video elements with sub-frame drift lock
   useEffect(() => {
     const syncVideo = (
       video: HTMLVideoElement | null,
       deck: DeckSyncPayload,
       lastUrlRef: React.MutableRefObject<string | null>,
-      frozen: boolean
+      frozen: boolean,
+      activeCondition = true
     ) => {
       if (!video) return;
-      if (deck.mediaUrl !== lastUrlRef.current) {
-        lastUrlRef.current = deck.mediaUrl;
-        if (deck.mediaUrl) {
-          video.src = deck.mediaUrl;
+      const effectiveUrl = activeCondition ? deck.mediaUrl : null;
+
+      if (effectiveUrl !== lastUrlRef.current) {
+        lastUrlRef.current = effectiveUrl;
+        if (effectiveUrl) {
+          video.src = effectiveUrl;
           video.currentTime = deck.currentTime || 0;
         } else {
           video.removeAttribute('src');
@@ -93,7 +126,7 @@ export const OutputView: React.FC = () => {
         }
       }
 
-      if (!deck.mediaUrl) return;
+      if (!effectiveUrl) return;
 
       if (video.playbackRate !== (deck.playbackRate || 1)) {
         video.playbackRate = deck.playbackRate || 1;
@@ -126,19 +159,26 @@ export const OutputView: React.FC = () => {
       }
     };
 
-    syncVideo(videoARef.current, state.deckA, lastUrlA, state.isFrozen);
-    syncVideo(videoBRef.current, state.deckB, lastUrlB, state.isFrozen);
+    syncVideo(videoARef.current, state.deckA, lastUrlA, state.isFrozen, true);
+    syncVideo(videoBRef.current, state.deckB, lastUrlB, state.isFrozen, true);
+
+    syncVideo(
+      bgVideoARef.current,
+      state.deckA,
+      lastBgUrlA,
+      state.isFrozen,
+      !!state.deckA.bgBlurEnabled
+    );
+    syncVideo(
+      bgVideoBRef.current,
+      state.deckB,
+      lastBgUrlB,
+      state.isFrozen,
+      !!state.deckB.bgBlurEnabled
+    );
   }, [state]);
 
-  const getDeckStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
-    const objectFit =
-      deck.scaleMode === 'fill' ? 'cover' : deck.scaleMode === 'stretch' ? 'fill' : 'contain';
-
-    const transforms: string[] = [];
-    if (deck.rotation) transforms.push(`rotate(${deck.rotation}deg)`);
-    if (deck.flipH) transforms.push('scaleX(-1)');
-    if (deck.flipV) transforms.push('scaleY(-1)');
-
+  const getDeckWrapperStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
     let clipPath = 'none';
     if (state.transitionType === 'wipe' && state.transitionProgress < 1) {
       const isIncoming = state.activeDeck === deckKey;
@@ -153,9 +193,8 @@ export const OutputView: React.FC = () => {
       inset: 0,
       width: '100%',
       height: '100%',
-      objectFit,
+      overflow: 'hidden',
       opacity: deck.mediaUrl ? Math.max(0, Math.min(1, deck.opacity)) : 0,
-      transform: transforms.length > 0 ? transforms.join(' ') : undefined,
       clipPath,
       zIndex: state.activeDeck === deckKey ? 2 : 1,
       backgroundColor: 'transparent',
@@ -186,27 +225,98 @@ export const OutputView: React.FC = () => {
       style={{
         position: 'fixed',
         inset: 0,
+        width: '100vw',
+        height: '100vh',
         backgroundColor: '#000000',
         overflow: 'hidden',
         cursor: 'none',
         userSelect: 'none',
       }}
+      onDoubleClick={() => {
+        if (window.electronAPI) {
+          window.electronAPI.setOutputWindow({ open: false });
+        }
+      }}
     >
       {/* Virtual Mosaic Canvas (Full or Sliced for Output 1 / Output 2) */}
       <div style={sliceContainerStyle}>
-        <video
-          ref={videoARef}
-          muted
-          playsInline
-          style={getDeckStyle(state.deckA, 'A')}
-        />
+        {/* DECK A (Background Blur Layer + Foreground Video Layer) */}
+        <div style={getDeckWrapperStyle(state.deckA, 'A')}>
+          <video
+            ref={bgVideoARef}
+            muted
+            playsInline
+            style={{
+              ...getBackgroundBlurVideoStyle({
+                bgBlurAmount: state.deckA.bgBlurAmount,
+                bgBlurBrightness: state.deckA.bgBlurBrightness,
+                bgBlurZoom: state.deckA.bgBlurZoom,
+                rotation: state.deckA.rotation,
+                flipH: state.deckA.flipH,
+                flipV: state.deckA.flipV,
+              }),
+              display: state.deckA.bgBlurEnabled && state.deckA.mediaUrl ? 'block' : 'none',
+            }}
+          />
+          <video
+            ref={videoARef}
+            muted
+            playsInline
+            style={getForegroundVideoStyle({
+              scaleMode: state.deckA.scaleMode,
+              aspectRatio: state.deckA.aspectRatio,
+              zoom: state.deckA.zoom,
+              scaleX: state.deckA.scaleX,
+              scaleY: state.deckA.scaleY,
+              offsetX: state.deckA.offsetX,
+              offsetY: state.deckA.offsetY,
+              rotation: state.deckA.rotation,
+              flipH: state.deckA.flipH,
+              flipV: state.deckA.flipV,
+              canvasWidth: viewport.canvasWidth,
+              canvasHeight: viewport.canvasHeight,
+            })}
+          />
+        </div>
 
-        <video
-          ref={videoBRef}
-          muted
-          playsInline
-          style={getDeckStyle(state.deckB, 'B')}
-        />
+        {/* DECK B (Background Blur Layer + Foreground Video Layer) */}
+        <div style={getDeckWrapperStyle(state.deckB, 'B')}>
+          <video
+            ref={bgVideoBRef}
+            muted
+            playsInline
+            style={{
+              ...getBackgroundBlurVideoStyle({
+                bgBlurAmount: state.deckB.bgBlurAmount,
+                bgBlurBrightness: state.deckB.bgBlurBrightness,
+                bgBlurZoom: state.deckB.bgBlurZoom,
+                rotation: state.deckB.rotation,
+                flipH: state.deckB.flipH,
+                flipV: state.deckB.flipV,
+              }),
+              display: state.deckB.bgBlurEnabled && state.deckB.mediaUrl ? 'block' : 'none',
+            }}
+          />
+          <video
+            ref={videoBRef}
+            muted
+            playsInline
+            style={getForegroundVideoStyle({
+              scaleMode: state.deckB.scaleMode,
+              aspectRatio: state.deckB.aspectRatio,
+              zoom: state.deckB.zoom,
+              scaleX: state.deckB.scaleX,
+              scaleY: state.deckB.scaleY,
+              offsetX: state.deckB.offsetX,
+              offsetY: state.deckB.offsetY,
+              rotation: state.deckB.rotation,
+              flipH: state.deckB.flipH,
+              flipV: state.deckB.flipV,
+              canvasWidth: viewport.canvasWidth,
+              canvasHeight: viewport.canvasHeight,
+            })}
+          />
+        </div>
 
         {state.isTestPattern && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>

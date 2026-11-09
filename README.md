@@ -1,9 +1,13 @@
-# CuePro Studio (v1.2.1)
+# CuePro Studio (v1.3.0)
 
 Reproductor profesional de vídeo para eventos en directo en Windows, inspirado en el flujo de trabajo y diseño de **Mitti** y **PlaybackPro Plus**.
 
-## Características principales (v1.2.1)
+## Características principales (v1.3.0)
 
+- **Escalado en Salida, Aspect Ratio, Zoom y Capa Fondo Blur 90% (v1.3.0)**:
+  - **Pantalla Completa Real**: Ajusta automáticamente vídeos `1920x1080` a salidas `2560x1440`, `4K` o formatos LED personalizados.
+  - **Capa Inferior con Vídeo Ampliado + Blur 90%**: Opción en 1 clic (`FONDO BLUR 90%`) para generar una capa inferior sincronizada con el propio vídeo ampliado a pantalla completa y desenfoque gaussiano al `90%` (ajustable en nivel de blur, brillo y zoom) con el vídeo en su formato original nítido por encima.
+  - **Control de Aspect Ratio y Zoom en Vivo**: Selección de relación de aspecto (`Nativo`, `Adaptar a Salida`, `16:9`, `16:10`, `4:3`, `21:9`, `32:9`, `9:16`, `1:1`), modos `FIT / FILL / STRETCH`, **Zoom (`50%` a `300%`)**, escala independiente X/Y, posición X/Y y botón para aplicar el formato a todos los vídeos de la escaleta.
 - **Doble Monitor en Cabina + Consola Central de Transición**:
   - `PREVIEW (PRV)` con recorte visual `IN / OUT`, avance fotograma a fotograma (`-1f / +1f`), escucha previa (*Audition*) y salto `-10s`.
   - `TAKE` con transiciones en tiempo real (`Cut`, `Cross-Dissolve / Mix`, `Dip to Black`, `Wipe`), `BLACKOUT`, `FREEZE` y `CARTA DE AJUSTE SMPTE`.

@@ -52,6 +52,10 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
     { label: 'PANIC (Stop & Blackout)', osc: '/mitti/panic', http: '/api/panic' },
     { label: 'Cargar Cue N en Preview', osc: '/mitti/jumpToCue [int]', http: '/cue/1/load' },
     { label: 'Lanzar Cue N a Program', osc: '/mitti/playCue [int]', http: '/cue/1/take' },
+    { label: 'Fondo Vídeo Ampliado + Blur 90%', osc: '/mitti/bgblur', http: '/api/blur-toggle' },
+    { label: 'Modo Escala (fit / fill / stretch)', osc: '/scale/mode [str]', http: '/api/scale-mode?value=fill' },
+    { label: 'Aspect Ratio (native/output/16:9/4:3)', osc: '/aspect/ratio [str]', http: '/api/aspect-ratio?value=output' },
+    { label: 'Zoom en Salida (50% a 300%)', osc: '/zoom [int]', http: '/api/zoom?value=133' },
     { label: 'Estado JSON en tiempo real', osc: '-', http: '/api/status' },
   ];
 
@@ -98,7 +102,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
           >
             <div>
               <strong style={{ color: '#34d399', fontSize: 12 }}>
-                MÓDULO NATIVO BITFOCUS COMPANION (CuePro Studio v1.2.1)
+                MÓDULO NATIVO BITFOCUS COMPANION (CuePro Studio v1.3.0)
               </strong>
               <div style={{ color: '#cbd5e1', fontSize: 11, marginTop: 2 }}>
                 Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a

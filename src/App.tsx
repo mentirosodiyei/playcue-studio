@@ -15,6 +15,8 @@ import {
   DisplayInfo,
   TransitionType,
   EndAction,
+  ScaleMode,
+  AspectRatioMode,
   DeckSyncPayload,
   OutputSyncState,
   ShowFileSchema,
@@ -39,6 +41,16 @@ const EMPTY_DECK: DeckSyncPayload = {
   isPlaying: false,
   playbackRate: 1,
   scaleMode: 'fit',
+  aspectRatio: 'native',
+  zoom: 100,
+  scaleX: 100,
+  scaleY: 100,
+  offsetX: 0,
+  offsetY: 0,
+  bgBlurEnabled: false,
+  bgBlurAmount: 90,
+  bgBlurBrightness: 75,
+  bgBlurZoom: 125,
   opacity: 0,
   rotation: 0,
   flipH: false,
@@ -151,6 +163,8 @@ const OperatorConsole: React.FC = () => {
   showOSDRef.current = showOSD;
   const syncSeqRef = useRef<number>(0);
   const endActionTriggeredRef = useRef<boolean>(false);
+  const deckAOpacityRef = useRef<number>(1);
+  const deckBOpacityRef = useRef<number>(0);
 
   // Web Audio API refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -611,6 +625,16 @@ const OperatorConsole: React.FC = () => {
             isPlaying: !!(vA && !vA.paused && !isFrozenRef.current),
             playbackRate: cueA.playbackRate || 1,
             scaleMode: cueA.scaleMode,
+            aspectRatio: cueA.aspectRatio || 'native',
+            zoom: cueA.zoom ?? 100,
+            scaleX: cueA.scaleX ?? 100,
+            scaleY: cueA.scaleY ?? 100,
+            offsetX: cueA.offsetX ?? 0,
+            offsetY: cueA.offsetY ?? 0,
+            bgBlurEnabled: !!cueA.bgBlurEnabled,
+            bgBlurAmount: cueA.bgBlurAmount ?? 90,
+            bgBlurBrightness: cueA.bgBlurBrightness ?? 75,
+            bgBlurZoom: cueA.bgBlurZoom ?? 125,
             opacity: envA.videoOpacity,
             rotation: cueA.rotation,
             flipH: cueA.flipH,
@@ -626,6 +650,16 @@ const OperatorConsole: React.FC = () => {
             isPlaying: !!(vB && !vB.paused && !isFrozenRef.current),
             playbackRate: cueB.playbackRate || 1,
             scaleMode: cueB.scaleMode,
+            aspectRatio: cueB.aspectRatio || 'native',
+            zoom: cueB.zoom ?? 100,
+            scaleX: cueB.scaleX ?? 100,
+            scaleY: cueB.scaleY ?? 100,
+            offsetX: cueB.offsetX ?? 0,
+            offsetY: cueB.offsetY ?? 0,
+            bgBlurEnabled: !!cueB.bgBlurEnabled,
+            bgBlurAmount: cueB.bgBlurAmount ?? 90,
+            bgBlurBrightness: cueB.bgBlurBrightness ?? 75,
+            bgBlurZoom: cueB.bgBlurZoom ?? 125,
             opacity: envB.videoOpacity,
             rotation: cueB.rotation,
             flipH: cueB.flipH,
@@ -633,9 +667,8 @@ const OperatorConsole: React.FC = () => {
           }
         : { ...EMPTY_DECK };
 
-      // Apply opacities locally to PGM monitor videos
-      if (vA) vA.style.opacity = String(payloadA.opacity);
-      if (vB) vB.style.opacity = String(payloadB.opacity);
+      deckAOpacityRef.current = payloadA.opacity;
+      deckBOpacityRef.current = payloadB.opacity;
 
       if (window.electronAPI) {
         syncSeqRef.current += 1;
@@ -978,6 +1011,69 @@ const OperatorConsole: React.FC = () => {
         case 'setVolume':
           setMasterVolume(Math.max(0, Math.min(125, Number(cmd.value) || 100)));
           break;
+        case 'toggleBgBlur': {
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            setCues((prev) =>
+              prev.map((c) =>
+                c.id === targetId
+                  ? {
+                      ...c,
+                      bgBlurEnabled: !c.bgBlurEnabled,
+                      bgBlurAmount: c.bgBlurAmount ?? 90,
+                      bgBlurBrightness: c.bgBlurBrightness ?? 75,
+                      bgBlurZoom: c.bgBlurZoom ?? 125,
+                    }
+                  : c
+              )
+            );
+          }
+          break;
+        }
+        case 'setScaleMode': {
+          const sm = String(cmd.value || 'fit') as ScaleMode;
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            setCues((prev) =>
+              prev.map((c) => (c.id === targetId ? { ...c, scaleMode: sm } : c))
+            );
+          }
+          break;
+        }
+        case 'setAspectRatio': {
+          const ar = String(cmd.value || 'native') as AspectRatioMode;
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            setCues((prev) =>
+              prev.map((c) => (c.id === targetId ? { ...c, aspectRatio: ar } : c))
+            );
+          }
+          break;
+        }
+        case 'setZoom': {
+          const z = Math.max(50, Math.min(300, Number(cmd.value) || 100));
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            setCues((prev) =>
+              prev.map((c) => (c.id === targetId ? { ...c, zoom: z } : c))
+            );
+          }
+          break;
+        }
+        case 'adjustZoom': {
+          const delta = Number(cmd.value) || 0;
+          const targetId = programCueId || previewCueId;
+          if (targetId) {
+            setCues((prev) =>
+              prev.map((c) =>
+                c.id === targetId
+                  ? { ...c, zoom: Math.max(50, Math.min(300, (c.zoom ?? 100) + delta)) }
+                  : c
+              )
+            );
+          }
+          break;
+        }
       }
     });
     return () => unsub();
@@ -1087,6 +1183,27 @@ const OperatorConsole: React.FC = () => {
     setIsDirty(true);
   };
 
+  // Apply geometry / aspect ratio / zoom / blur settings of a cue to all cues in the playlist
+  const handleApplyGeometryToAllCues = (sourceCue: VideoCue) => {
+    setCues((prev) =>
+      prev.map((c) => ({
+        ...c,
+        scaleMode: sourceCue.scaleMode,
+        aspectRatio: sourceCue.aspectRatio ?? 'native',
+        zoom: sourceCue.zoom ?? 100,
+        scaleX: sourceCue.scaleX ?? 100,
+        scaleY: sourceCue.scaleY ?? 100,
+        offsetX: sourceCue.offsetX ?? 0,
+        offsetY: sourceCue.offsetY ?? 0,
+        bgBlurEnabled: !!sourceCue.bgBlurEnabled,
+        bgBlurAmount: sourceCue.bgBlurAmount ?? 90,
+        bgBlurBrightness: sourceCue.bgBlurBrightness ?? 75,
+        bgBlurZoom: sourceCue.bgBlurZoom ?? 125,
+      }))
+    );
+    setIsDirty(true);
+  };
+
   // Import video files by paths
   const importFilePaths = async (paths: string[]) => {
     if (!window.electronAPI || paths.length === 0) return;
@@ -1117,6 +1234,16 @@ const OperatorConsole: React.FC = () => {
         audioFadeIn: 0,
         audioFadeOut: 0,
         scaleMode: 'fit',
+        aspectRatio: 'native',
+        zoom: 100,
+        scaleX: 100,
+        scaleY: 100,
+        offsetX: 0,
+        offsetY: 0,
+        bgBlurEnabled: false,
+        bgBlurAmount: 90,
+        bgBlurBrightness: 75,
+        bgBlurZoom: 125,
         opacity: 100,
         rotation: 0,
         flipH: false,
@@ -1192,6 +1319,16 @@ const OperatorConsole: React.FC = () => {
         audioFadeIn: 0.5,
         audioFadeOut: 1.0,
         scaleMode: 'fit',
+        aspectRatio: 'native',
+        zoom: 100,
+        scaleX: 100,
+        scaleY: 100,
+        offsetX: 0,
+        offsetY: 0,
+        bgBlurEnabled: false,
+        bgBlurAmount: 90,
+        bgBlurBrightness: 75,
+        bgBlurZoom: 125,
         opacity: 100,
         rotation: 0,
         flipH: false,
@@ -1351,36 +1488,59 @@ const OperatorConsole: React.FC = () => {
     }
   };
 
+  const deckACue = cues.find((c) => c.id === deckACueId);
+  const deckBCue = cues.find((c) => c.id === deckBCueId);
+  const activeOutputDisplay =
+    displays.find((d) => d.id === (mosaicConfig.display1Id ?? selectedDisplayId)) ||
+    displays.find((d) => !d.isPrimary) ||
+    displays[0];
+  const basePhysW = activeOutputDisplay?.physicalWidth || 2560;
+  const basePhysH = activeOutputDisplay?.physicalHeight || 1440;
+
   const currentDeckAPayload: DeckSyncPayload = {
     cueId: deckACueId,
-    mediaUrl: toMediaUrl(
-      cues.find((c) => c.id === deckACueId)?.proxyPath ||
-        cues.find((c) => c.id === deckACueId)?.filePath
-    ),
+    mediaUrl: toMediaUrl(deckACue?.proxyPath || deckACue?.filePath),
     currentTime: pgmVideoARef.current?.currentTime || 0,
     isPlaying: !!(pgmVideoARef.current && !pgmVideoARef.current.paused),
-    playbackRate: cues.find((c) => c.id === deckACueId)?.playbackRate || 1,
-    scaleMode: cues.find((c) => c.id === deckACueId)?.scaleMode || 'fit',
-    opacity: Number(pgmVideoARef.current?.style.opacity ?? 1),
-    rotation: cues.find((c) => c.id === deckACueId)?.rotation || 0,
-    flipH: cues.find((c) => c.id === deckACueId)?.flipH || false,
-    flipV: cues.find((c) => c.id === deckACueId)?.flipV || false,
+    playbackRate: deckACue?.playbackRate || 1,
+    scaleMode: deckACue?.scaleMode || 'fit',
+    aspectRatio: deckACue?.aspectRatio || 'native',
+    zoom: deckACue?.zoom ?? 100,
+    scaleX: deckACue?.scaleX ?? 100,
+    scaleY: deckACue?.scaleY ?? 100,
+    offsetX: deckACue?.offsetX ?? 0,
+    offsetY: deckACue?.offsetY ?? 0,
+    bgBlurEnabled: !!deckACue?.bgBlurEnabled,
+    bgBlurAmount: deckACue?.bgBlurAmount ?? 90,
+    bgBlurBrightness: deckACue?.bgBlurBrightness ?? 75,
+    bgBlurZoom: deckACue?.bgBlurZoom ?? 125,
+    opacity: deckAOpacityRef.current,
+    rotation: deckACue?.rotation || 0,
+    flipH: deckACue?.flipH || false,
+    flipV: deckACue?.flipV || false,
   };
 
   const currentDeckBPayload: DeckSyncPayload = {
     cueId: deckBCueId,
-    mediaUrl: toMediaUrl(
-      cues.find((c) => c.id === deckBCueId)?.proxyPath ||
-        cues.find((c) => c.id === deckBCueId)?.filePath
-    ),
+    mediaUrl: toMediaUrl(deckBCue?.proxyPath || deckBCue?.filePath),
     currentTime: pgmVideoBRef.current?.currentTime || 0,
     isPlaying: !!(pgmVideoBRef.current && !pgmVideoBRef.current.paused),
-    playbackRate: cues.find((c) => c.id === deckBCueId)?.playbackRate || 1,
-    scaleMode: cues.find((c) => c.id === deckBCueId)?.scaleMode || 'fit',
-    opacity: Number(pgmVideoBRef.current?.style.opacity ?? 0),
-    rotation: cues.find((c) => c.id === deckBCueId)?.rotation || 0,
-    flipH: cues.find((c) => c.id === deckBCueId)?.flipH || false,
-    flipV: cues.find((c) => c.id === deckBCueId)?.flipV || false,
+    playbackRate: deckBCue?.playbackRate || 1,
+    scaleMode: deckBCue?.scaleMode || 'fit',
+    aspectRatio: deckBCue?.aspectRatio || 'native',
+    zoom: deckBCue?.zoom ?? 100,
+    scaleX: deckBCue?.scaleX ?? 100,
+    scaleY: deckBCue?.scaleY ?? 100,
+    offsetX: deckBCue?.offsetX ?? 0,
+    offsetY: deckBCue?.offsetY ?? 0,
+    bgBlurEnabled: !!deckBCue?.bgBlurEnabled,
+    bgBlurAmount: deckBCue?.bgBlurAmount ?? 90,
+    bgBlurBrightness: deckBCue?.bgBlurBrightness ?? 75,
+    bgBlurZoom: deckBCue?.bgBlurZoom ?? 125,
+    opacity: deckBOpacityRef.current,
+    rotation: deckBCue?.rotation || 0,
+    flipH: deckBCue?.flipH || false,
+    flipV: deckBCue?.flipV || false,
   };
 
   return (
@@ -1411,7 +1571,7 @@ const OperatorConsole: React.FC = () => {
           <div className="brand-logo">
             <span className="brand-dot" />
             <strong>CUEPRO</strong>
-            <span className="brand-sub">STUDIO v1.2.1</span>
+            <span className="brand-sub">STUDIO v1.3.0</span>
           </div>
 
           <input
@@ -1694,6 +1854,7 @@ const OperatorConsole: React.FC = () => {
               updateCue(programCueId, { endAction: act });
             }
           }}
+          onUpdateCue={updateCue}
           masterVolume={masterVolume}
           isMasterMuted={isMasterMuted}
           onChangeMasterVolume={(val) => {
@@ -1705,13 +1866,13 @@ const OperatorConsole: React.FC = () => {
           mosaicConfig={mosaicConfig}
           totalCanvasWidth={
             mosaicConfig.mode === 'horizontal_2x1'
-              ? 3840
-              : 1920
+              ? basePhysW * 2 - (mosaicConfig.overlapPx || 0)
+              : basePhysW
           }
           totalCanvasHeight={
             mosaicConfig.mode === 'vertical_1x2'
-              ? 2160
-              : 1080
+              ? basePhysH * 2 - (mosaicConfig.overlapPx || 0)
+              : basePhysH
           }
         />
       </section>
@@ -1778,6 +1939,7 @@ const OperatorConsole: React.FC = () => {
           cue={selectedCue}
           prvCurrentTime={prvTime}
           onUpdateCue={updateCue}
+          onApplyGeometryToAllCues={handleApplyGeometryToAllCues}
           onOptimizeProxy={handleOptimizeProxy}
           onRelinkCue={handleRelinkCue}
         />

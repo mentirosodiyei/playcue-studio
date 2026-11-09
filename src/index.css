@@ -2265,3 +2265,154 @@ textarea {
   top: calc(50% + 6px);
 }
 
+/* ================= QUICK GEOMETRY & BLUR 90% BAR (PRV & PGM) ================= */
+.quick-geometry-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #080c13;
+  border-top: 1px solid #161f2e;
+  flex-wrap: wrap;
+}
+
+.qg-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #0d131d;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.qg-icon {
+  color: #38bdf8;
+  margin-left: 4px;
+}
+
+.qg-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.1s;
+}
+
+.qg-btn:hover {
+  color: #f8fafc;
+  background: #1e293b;
+}
+
+.qg-btn.active {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #e0f2fe;
+}
+
+.qg-btn.active-amber {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: #f59e0b;
+  color: #fde68a;
+}
+
+.qg-btn.icon {
+  padding: 2px 5px;
+}
+
+.qg-btn.zoom-readout {
+  font-family: 'Consolas', monospace;
+  min-width: 40px;
+  justify-content: center;
+  color: #e2e8f0;
+}
+
+.qg-select {
+  background: #090d14;
+  border: none;
+  color: #e2e8f0;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.qg-btn.blur-toggle-btn {
+  background: #181326;
+  border: 1px solid #4c1d95;
+  color: #d8b4fe;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.qg-btn.blur-toggle-btn:hover {
+  background: #2e1065;
+  color: #fff;
+}
+
+.qg-btn.blur-toggle-btn.active-purple {
+  background: linear-gradient(90deg, #7c3aed 0%, #9333ea 100%);
+  border-color: #c084fc;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(147, 51, 234, 0.45);
+}
+
+/* Inspector Blur 90% Layer Box */
+.blur-layer-box {
+  border: 1px solid #3b1d6e !important;
+  background: rgba(46, 16, 101, 0.18) !important;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.blur-layer-box.active {
+  border-color: #a855f7 !important;
+  background: rgba(88, 28, 135, 0.28) !important;
+}
+
+.status-pill {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.status-pill.on {
+  background: #9333ea;
+  color: #fff;
+}
+
+.status-pill.off {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.blur-master-toggle {
+  background: #1f1633 !important;
+  border: 1px solid #6d28d9 !important;
+  color: #e9d5ff !important;
+  margin-top: 4px;
+}
+
+.blur-master-toggle.active {
+  background: linear-gradient(90deg, #7c3aed 0%, #9333ea 100%) !important;
+  border-color: #d8b4fe !important;
+  color: #ffffff !important;
+}
+
+.blur-sliders-stack {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(168, 85, 247, 0.3);
+}
+
+

@@ -313,6 +313,22 @@ export class RemoteControlServer {
       case '/api/output-toggle':
       case '/output/toggle':
         return make('toggleOutput');
+      case '/api/blur-toggle':
+      case '/blur/toggle':
+      case '/mitti/bgblur':
+        return make('toggleBgBlur');
+      case '/api/scale-mode':
+      case '/scale/mode':
+        return make('setScaleMode', String(arg ?? 'fit'));
+      case '/api/aspect-ratio':
+      case '/aspect/ratio':
+        return make('setAspectRatio', String(arg ?? 'native'));
+      case '/api/zoom':
+      case '/zoom':
+        return make('setZoom', Number(arg ?? 100));
+      case '/api/zoom-delta':
+      case '/zoom/delta':
+        return make('adjustZoom', Number(arg ?? 0));
       default: {
         const takeMatch = clean.match(/\/cue\/(\d+)\/take/);
         if (takeMatch) {
