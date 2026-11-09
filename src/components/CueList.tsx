@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -10,11 +10,13 @@ import {
   ArrowDown,
   Volume2,
   VolumeX,
-  AlertTriangle,
   Wand2,
   Link,
   Film,
-  Sparkles,
+  FolderPlus,
+  FolderOpen,
+  FileVideo,
+  ChevronDown,
 } from 'lucide-react';
 import {
   VideoCue,
@@ -25,7 +27,6 @@ import {
   formatTimecode,
   getEffectiveCueDuration,
   gainToDbString,
-  CUE_COLOR_MAP,
   END_ACTION_LABELS,
 } from '../utils/timecode';
 
@@ -34,7 +35,6 @@ interface CueListProps {
   selectedCueId: string | null;
   previewCueId: string | null;
   programCueId: string | null;
-  isGeneratingDemos: boolean;
   onSelectCue: (id: string) => void;
   onLoadToPreview: (id: string) => void;
   onTakeCueToProgram: (id: string) => void;
@@ -44,7 +44,8 @@ interface CueListProps {
   onMoveCue: (index: number, direction: -1 | 1) => void;
   onReorderCues: (fromIndex: number, toIndex: number) => void;
   onAddVideos: () => void;
-  onGenerateDemos: () => void;
+  onAddFolder: () => void;
+  onLocateCue: (cue: VideoCue) => void;
   onOptimizeProxy: (cue: VideoCue) => void;
   onRelinkCue: (cue: VideoCue) => void;
 }
@@ -54,7 +55,6 @@ export const CueList: React.FC<CueListProps> = ({
   selectedCueId,
   previewCueId,
   programCueId,
-  isGeneratingDemos,
   onSelectCue,
   onLoadToPreview,
   onTakeCueToProgram,
@@ -64,7 +64,8 @@ export const CueList: React.FC<CueListProps> = ({
   onMoveCue,
   onReorderCues,
   onAddVideos,
-  onGenerateDemos,
+  onAddFolder,
+  onLocateCue,
   onOptimizeProxy,
   onRelinkCue,
 }) => {
@@ -72,14 +73,49 @@ export const CueList: React.FC<CueListProps> = ({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // "Añadir Vídeos" dropdown menu state
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Right-click Context Menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    cue: VideoCue;
+  } | null>(null);
+
+  // Delete confirmation modal state
+  const [cueToConfirmDelete, setCueToConfirmDelete] = useState<VideoCue | null>(null);
+
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+      setContextMenu(null);
+    };
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAddMenuOpen(false);
+        setContextMenu(null);
+        setCueToConfirmDelete(null);
+      }
+    };
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('keydown', handleGlobalKey);
+    };
+  }, []);
+
   const filteredCues = cues.filter((c) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
       c.name.toLowerCase().includes(q) ||
       c.cueNumber.toLowerCase().includes(q) ||
-      c.fileName.toLowerCase().includes(q) ||
-      c.notes.toLowerCase().includes(q)
+      c.fileName.toLowerCase().includes(q)
     );
   });
 
@@ -92,7 +128,7 @@ export const CueList: React.FC<CueListProps> = ({
         <div className="cuelist-toolbar-left">
           <div className="panel-section-title">
             <Film size={15} />
-            <span>CUE LIST / ESCALETA ({cues.length})</span>
+            <span>CUE LIST ({cues.length})</span>
           </div>
           <span className="total-runtime-badge">
             TOTAL: {formatTimecode(totalShowDuration, 25, true)}
@@ -101,7 +137,7 @@ export const CueList: React.FC<CueListProps> = ({
             <Search size={13} />
             <input
               type="text"
-              placeholder="Buscar cue por nombre, # o nota..."
+              placeholder="Buscar vídeo en el Cue List..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -109,24 +145,52 @@ export const CueList: React.FC<CueListProps> = ({
         </div>
 
         <div className="cuelist-toolbar-right">
-          <button
-            className="toolbar-action-btn secondary"
-            onClick={onGenerateDemos}
-            disabled={isGeneratingDemos}
-            title="Genera 3 vídeos de prueba 1080p50 con barras SMPTE, cuenta atrás y tono de audio usando FFmpeg"
-          >
-            <Sparkles size={14} />
-            <span>{isGeneratingDemos ? 'Generando 1080p...' : 'Generar Vídeos Demo'}</span>
-          </button>
+          <div className="add-videos-dropdown-wrap" ref={addMenuRef}>
+            <button
+              className="toolbar-action-btn primary"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAddMenuOpen((prev) => !prev);
+              }}
+              title="Añadir archivos de vídeo sueltos o carpetas completas al Cue List"
+            >
+              <Plus size={15} />
+              <span>Añadir Vídeos</span>
+              <ChevronDown size={13} style={{ marginLeft: 2, opacity: 0.85 }} />
+            </button>
 
-          <button
-            className="toolbar-action-btn primary"
-            onClick={onAddVideos}
-            title="Importar archivos de vídeo desde el disco (o arrastra y suelta aquí)"
-          >
-            <Plus size={15} />
-            <span>Añadir Vídeos</span>
-          </button>
+            {addMenuOpen && (
+              <div className="macos-dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="macos-dropdown-item"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    onAddVideos();
+                  }}
+                >
+                  <FileVideo size={14} className="cyan-text" />
+                  <div className="dropdown-item-text">
+                    <strong>Añadir Archivos...</strong>
+                    <span>Seleccionar uno o varios vídeos</span>
+                  </div>
+                </button>
+                <div className="macos-dropdown-divider" />
+                <button
+                  className="macos-dropdown-item"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    onAddFolder();
+                  }}
+                >
+                  <FolderPlus size={14} className="cyan-text" />
+                  <div className="dropdown-item-text">
+                    <strong>Añadir Carpeta...</strong>
+                    <span>Importar todos los vídeos de una carpeta</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -148,23 +212,18 @@ export const CueList: React.FC<CueListProps> = ({
       <div className="cuelist-rows-scroll">
         {filteredCues.length === 0 ? (
           <div className="cuelist-empty-state">
-            <Film size={36} strokeWidth={1.3} />
-            <h3>No hay vídeos en la escaleta</h3>
+            <Film size={34} strokeWidth={1.3} />
+            <h3>Cue List vacío</h3>
             <p>
-              Arrastra y suelta cualquier archivo de vídeo (MP4, MOV ProRes, MKV, AVI, WebM, MXF)
-              directamente en la ventana, o pulsa <strong>Añadir Vídeos</strong>.
+              Arrastra archivos o carpetas de vídeo directamente aquí, o usa el botón{' '}
+              <strong>Añadir Vídeos</strong>.
             </p>
             <div className="empty-state-buttons">
               <button className="toolbar-action-btn primary" onClick={onAddVideos}>
-                <Plus size={15} /> Añadir Vídeos del PC
+                <FileVideo size={14} /> Añadir Archivos
               </button>
-              <button
-                className="toolbar-action-btn secondary"
-                onClick={onGenerateDemos}
-                disabled={isGeneratingDemos}
-              >
-                <Sparkles size={14} />{' '}
-                {isGeneratingDemos ? 'Generando Clips...' : 'Crear 3 Vídeos Demo Broadcast'}
+              <button className="toolbar-action-btn secondary" onClick={onAddFolder}>
+                <FolderPlus size={14} /> Añadir Carpeta
               </button>
             </div>
           </div>
@@ -175,28 +234,50 @@ export const CueList: React.FC<CueListProps> = ({
             const isPrv = cue.id === previewCueId;
             const isPgm = cue.id === programCueId;
             const effectiveDur = getEffectiveCueDuration(cue);
-            const colorInfo = CUE_COLOR_MAP[cue.color || 'none'];
             const outVal = cue.outPoint > cue.inPoint ? cue.outPoint : cue.duration;
 
             return (
               <div
                 key={cue.id}
                 draggable
-                onDragStart={() => setDragIndex(realIndex)}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', String(realIndex));
+                  setDragIndex(realIndex);
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
-                  setDragOverIndex(realIndex);
-                }}
-                onDrop={() => {
-                  if (dragIndex !== null && dragIndex !== realIndex) {
-                    onReorderCues(dragIndex, realIndex);
+                  e.stopPropagation();
+                  if (dragIndex !== null) {
+                    setDragOverIndex(realIndex);
                   }
+                }}
+                onDrop={(e) => {
+                  if (dragIndex !== null) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (dragIndex !== realIndex) {
+                      onReorderCues(dragIndex, realIndex);
+                    }
+                    setDragIndex(null);
+                    setDragOverIndex(null);
+                  }
+                }}
+                onDragEnd={(e) => {
+                  e.stopPropagation();
                   setDragIndex(null);
                   setDragOverIndex(null);
                 }}
-                onDragEnd={() => {
-                  setDragIndex(null);
-                  setDragOverIndex(null);
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelectCue(cue.id);
+                  const menuW = 210;
+                  const menuH = 92;
+                  const posX = Math.min(e.clientX, window.innerWidth - menuW - 12);
+                  const posY = Math.min(e.clientY, window.innerHeight - menuH - 12);
+                  setContextMenu({ x: posX, y: posY, cue });
                 }}
                 onClick={() => {
                   onSelectCue(cue.id);
@@ -211,9 +292,9 @@ export const CueList: React.FC<CueListProps> = ({
                     ? 'rgba(239, 68, 68, 0.14)'
                     : isPrv
                     ? 'rgba(16, 185, 129, 0.10)'
-                    : colorInfo.bg,
+                    : 'transparent',
                   borderLeft: `4px solid ${
-                    isPgm ? '#ef4444' : isPrv ? '#10b981' : colorInfo.border
+                    isPgm ? '#ef4444' : isPrv ? '#10b981' : isSelected ? '#38bdf8' : 'transparent'
                   }`,
                 }}
               >
@@ -226,10 +307,6 @@ export const CueList: React.FC<CueListProps> = ({
 
                 {/* Cue Number */}
                 <div className="col-num">
-                  <span
-                    className="color-dot"
-                    style={{ backgroundColor: colorInfo.dot }}
-                  />
                   <span className="cue-number-text">{cue.cueNumber}</span>
                 </div>
 
@@ -243,7 +320,7 @@ export const CueList: React.FC<CueListProps> = ({
                         <Film size={16} />
                       </div>
                     )}
-                    {cue.proxyPath && <span className="proxy-badge">PROXY</span>}
+                    {cue.proxyPath && <span className="proxy-badge">CONV</span>}
                   </div>
                 </div>
 
@@ -269,18 +346,18 @@ export const CueList: React.FC<CueListProps> = ({
                           e.stopPropagation();
                           onOptimizeProxy(cue);
                         }}
-                        title="Este códec (ej. ProRes / AVI / MKV especial) se puede convertir a H.264 Proxy para reproducción instantánea"
+                        title="Convertir este vídeo a H.264 para reproducción nativa"
                       >
                         <Wand2 size={11} />
                         {cue.proxyProgress !== undefined && cue.proxyProgress < 100
                           ? `Convirtiendo ${cue.proxyProgress}%`
-                          : 'Optimizar H.264'}
+                          : 'Convertir H.264'}
                       </button>
                     )}
                   </div>
                   <div className="cue-meta-line">
                     <span>
-                      {cue.width}x{cue.height} • {cue.fps}fps • {cue.videoCodec.toUpperCase()}
+                      {cue.width}×{cue.height} • {cue.fps}fps • {cue.videoCodec.toUpperCase()}
                     </span>
                     {cue.audioChannels > 0 ? (
                       <span>• {cue.audioCodec.toUpperCase()} ({cue.audioChannels}ch)</span>
@@ -290,7 +367,6 @@ export const CueList: React.FC<CueListProps> = ({
                     {cue.playbackRate !== 1 && (
                       <span className="speed-tag">{cue.playbackRate}x</span>
                     )}
-                    {cue.notes && <span className="cue-note-preview">“{cue.notes}”</span>}
                   </div>
                   {cue.proxyProgress !== undefined && cue.proxyProgress < 100 && (
                     <div className="proxy-progress-bar">
@@ -411,8 +487,8 @@ export const CueList: React.FC<CueListProps> = ({
                   </button>
                   <button
                     className="row-icon-btn danger"
-                    onClick={() => onDeleteCue(cue.id)}
-                    title="Eliminar Cue"
+                    onClick={() => setCueToConfirmDelete(cue)}
+                    title="Delete (Eliminar del Cue List)"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -422,6 +498,78 @@ export const CueList: React.FC<CueListProps> = ({
           })
         )}
       </div>
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="context-menu-popup"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="context-menu-item"
+            onClick={() => {
+              const target = contextMenu.cue;
+              setContextMenu(null);
+              onLocateCue(target);
+            }}
+          >
+            <FolderOpen size={14} className="cyan-text" />
+            <span>Locate (Abrir en carpeta)</span>
+          </button>
+          <div className="macos-dropdown-divider" />
+          <button
+            className="context-menu-item danger"
+            onClick={() => {
+              const target = contextMenu.cue;
+              setContextMenu(null);
+              setCueToConfirmDelete(target);
+            }}
+          >
+            <Trash2 size={14} />
+            <span>Delete (Borrar de la app)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting a Cue from the App */}
+      {cueToConfirmDelete && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setCueToConfirmDelete(null)}
+        >
+          <div
+            className="confirm-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4>¿Eliminar vídeo del Cue List?</h4>
+            <p>
+              Se eliminará <strong>"{cueToConfirmDelete.name}"</strong> únicamente de la lista de la
+              aplicación. El archivo original <strong>no se borrará</strong> de la carpeta donde está
+              guardado.
+            </p>
+            <div className="confirm-modal-actions">
+              <button
+                className="inspector-action-btn"
+                onClick={() => setCueToConfirmDelete(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="inspector-action-btn danger-fill"
+                onClick={() => {
+                  const id = cueToConfirmDelete.id;
+                  setCueToConfirmDelete(null);
+                  onDeleteCue(id);
+                }}
+              >
+                <Trash2 size={13} />
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

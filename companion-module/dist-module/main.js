@@ -26255,8 +26255,9 @@ var CueProStudioInstance = class extends import_base.InstanceBase {
       { variableId: "pgm_number", name: "Cue # en Programa (PGM)" },
       { variableId: "pgm_name", name: "Nombre del Clip en Programa (PGM)" },
       { variableId: "pgm_state", name: "Estado de Programa (PLAY / PAUSE)" },
-      { variableId: "pgm_elapsed", name: "Tiempo Transcurrido PGM (MM:SS)" },
-      { variableId: "pgm_remaining", name: "Tiempo Restante PGM (-MM:SS)" },
+      { variableId: "pgm_elapsed", name: "Tiempo Transcurrido del V\xEDdeo PGM (MM:SS)" },
+      { variableId: "pgm_remaining", name: "Tiempo Restante REMAINING PGM (-MM:SS)" },
+      { variableId: "pgm_duration", name: "Duraci\xF3n Total del V\xEDdeo en PGM (MM:SS)" },
       { variableId: "pgm_end_action", name: "Acci\xF3n Final activa en PGM" },
       { variableId: "prv_number", name: "Cue # en Previo (PRV)" },
       { variableId: "prv_name", name: "Nombre del Clip en Previo (PRV)" },
@@ -26282,6 +26283,7 @@ var CueProStudioInstance = class extends import_base.InstanceBase {
       pgm_state: s.isPlaying ? "ON AIR" : "PAUSE",
       pgm_elapsed: formatShortTc(s.elapsed),
       pgm_remaining: `-${formatShortTc(s.remaining)}`,
+      pgm_duration: formatShortTc(s.duration),
       pgm_end_action: (s.programEndAction || "hold").toUpperCase(),
       prv_number: s.previewCueNumber || "-",
       prv_name: (s.previewCueName || "SIN CLIP").slice(0, 18),
@@ -26792,12 +26794,25 @@ var CueProStudioInstance = class extends import_base.InstanceBase {
         }
       ]
     };
+    presets["master_video_time"] = {
+      type: "button",
+      category: "1. TAKE y Transporte Master",
+      name: "Reloj Tiempo del V\xEDdeo (Transcurrido / Duraci\xF3n Total)",
+      style: {
+        text: "TIEMPO V\xCDDEO\n$(cuepro:pgm_elapsed)\n/ $(cuepro:pgm_duration)",
+        size: "14",
+        color: (0, import_base.combineRgb)(56, 189, 248),
+        bgcolor: (0, import_base.combineRgb)(7, 9, 13)
+      },
+      steps: [{ down: [], up: [] }],
+      feedbacks: []
+    };
     presets["master_countdown"] = {
       type: "button",
       category: "1. TAKE y Transporte Master",
-      name: "Reloj Cuenta Atr\xE1s Din\xE1mico (Verde / \xC1mbar <15s / Rojo <5s)",
+      name: "Reloj REMAINING / Tiempo Restante (Verde / \xC1mbar <15s / Rojo <5s)",
       style: {
-        text: "RESTANTE\n$(cuepro:pgm_remaining)",
+        text: "REMAINING\n$(cuepro:pgm_remaining)\nCUE $(cuepro:pgm_number)",
         size: "14",
         color: (0, import_base.combineRgb)(52, 211, 153),
         bgcolor: (0, import_base.combineRgb)(7, 9, 13)

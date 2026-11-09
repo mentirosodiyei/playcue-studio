@@ -5,9 +5,7 @@ import {
   Save,
   FilePlus,
   Radio,
-  AlertOctagon,
   Eye,
-  ExternalLink,
   Layers,
 } from 'lucide-react';
 import {
@@ -22,6 +20,7 @@ import {
   ShowFileSchema,
   RemoteCommandLog,
   MosaicConfig,
+  ConvertVideoOptions,
 } from './types/cue';
 import {
   formatTimecode,
@@ -47,6 +46,8 @@ const EMPTY_DECK: DeckSyncPayload = {
   scaleY: 100,
   offsetX: 0,
   offsetY: 0,
+  videoWidth: 1920,
+  videoHeight: 1080,
   bgBlurEnabled: false,
   bgBlurAmount: 90,
   bgBlurBrightness: 75,
@@ -70,12 +71,17 @@ export const App: React.FC = () => {
 
 const OperatorConsole: React.FC = () => {
   // Show state
-  const [showName, setShowName] = useState<string>('Evento Principal Live');
-  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [showName, setShowName] = useState<string>('CuePro Show');
   const [cues, setCues] = useState<VideoCue[]>([]);
   const [selectedCueId, setSelectedCueId] = useState<string | null>(null);
   const [previewCueId, setPreviewCueId] = useState<string | null>(null);
   const [programCueId, setProgramCueId] = useState<string | null>(null);
+  const initialLoadDoneRef = useRef<boolean>(false);
+
+  // Resizable Workspace Splitters (Monitors vs CueList height, CueList vs Inspector width)
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const [upperHeightPct, setUpperHeightPct] = useState<number>(46);
+  const [inspectorWidthPx, setInspectorWidthPx] = useState<number>(350);
 
   // Displays & Output Window state
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
@@ -130,10 +136,6 @@ const OperatorConsole: React.FC = () => {
     ips: string[];
   }>({ oscPort: 51000, httpPort: 51080, ips: ['127.0.0.1'] });
   const [remoteLogs, setRemoteLogs] = useState<RemoteCommandLog[]>([]);
-  const [isGeneratingDemos, setIsGeneratingDemos] = useState<boolean>(false);
-  const [wallClock, setWallClock] = useState<string>(() =>
-    new Date().toLocaleTimeString('es-ES', { hour12: false })
-  );
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
   // Refs for real-time 60fps loop access
@@ -217,15 +219,7 @@ const OperatorConsole: React.FC = () => {
     }
   }, []);
 
-  // System wall clock
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setWallClock(new Date().toLocaleTimeString('es-ES', { hour12: false }));
-    }, 500);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Load displays, remote info, and autosaved show on startup
+  // Load displays, remote info, and autosaved show (or first-run bundled demo videos) on startup
   useEffect(() => {
     if (!window.electronAPI) return;
 
@@ -251,21 +245,94 @@ const OperatorConsole: React.FC = () => {
       setRemoteInfo(info);
     });
 
-    window.electronAPI.loadAutosaveShow().then((savedJson) => {
+    window.electronAPI.loadAutosaveShow().then(async (savedJson) => {
       if (savedJson) {
         try {
           const parsed: ShowFileSchema = JSON.parse(savedJson);
-          if (parsed && Array.isArray(parsed.cues) && parsed.cues.length > 0) {
-            setShowName(parsed.showName || 'Evento Principal Live');
+          if (parsed && Array.isArray(parsed.cues)) {
+            setShowName(parsed.showName || 'CuePro Show');
             setCues(parsed.cues);
             if (parsed.mosaicConfig) {
               setMosaicConfig(parsed.mosaicConfig);
             }
-            setSelectedCueId(parsed.cues[0].id);
-            setPreviewCueId(parsed.cues[0].id);
+            if (parsed.cues.length > 0) {
+              setSelectedCueId(parsed.cues[0].id);
+              setPreviewCueId(parsed.cues[0].id);
+            }
+            initialLoadDoneRef.current = true;
+            return;
           }
         } catch {}
       }
+
+      // First run ever: load the 3 bundled demo videos
+      try {
+        const probes = await window.electronAPI!.getFirstRunDemoClips();
+        if (probes && probes.length > 0) {
+          const demoTitles = [
+            'Demo 01 - Cuenta Atrás Broadcast 1080p50',
+            'Demo 02 - Barras SMPTE HD + Tono 1080p50',
+            'Demo 03 - Fondo Loop Escenario 1080p50',
+          ];
+          const demoEndActions: EndAction[] = ['hold', 'black', 'loop'];
+          const created: VideoCue[] = probes.map((probe: any, i: number) => ({
+            id: `demo_init_${Date.now()}_${i}`,
+            cueNumber: String(i + 1).padStart(2, '0'),
+            name: demoTitles[i] || probe.fileName,
+            filePath: probe.filePath,
+            fileName: probe.fileName,
+            fileSize: probe.fileSize,
+            duration: probe.duration || 12,
+            inPoint: 0,
+            outPoint: probe.duration || 12,
+            endAction: demoEndActions[i] || 'hold',
+            transitionType: 'dissolve',
+            transitionDuration: 1.0,
+            volume: 100,
+            muted: false,
+            audioFadeIn: 0,
+            audioFadeOut: 0,
+            scaleMode: 'fit',
+            aspectRatio: 'native',
+            zoom: 100,
+            scaleX: 100,
+            scaleY: 100,
+            offsetX: 0,
+            offsetY: 0,
+            bgBlurEnabled: false,
+            bgBlurAmount: 90,
+            bgBlurBrightness: 75,
+            bgBlurZoom: 125,
+            opacity: 100,
+            rotation: 0,
+            flipH: false,
+            flipV: false,
+            videoFadeIn: 0,
+            videoFadeOut: 0,
+            playbackRate: 1,
+            width: probe.width || 1920,
+            height: probe.height || 1080,
+            fps: probe.fps || 50,
+            videoCodec: probe.videoCodec || 'h264',
+            videoProfile: probe.videoProfile,
+            pixelFormat: probe.pixelFormat,
+            bitrateKbps: probe.bitrateKbps,
+            audioCodec: probe.audioCodec || 'aac',
+            audioChannels: probe.audioChannels ?? 2,
+            audioSampleRate: probe.audioSampleRate ?? 48000,
+            container: probe.container || 'mp4',
+            isNativeCompatible: true,
+            thumbnailDataUrl: probe.thumbnailDataUrl || null,
+            exists: true,
+            color: 'none',
+            notes: '',
+          }));
+          setCues(created);
+          setSelectedCueId(created[0].id);
+          setPreviewCueId(created[0].id);
+        }
+      } catch {}
+      initialLoadDoneRef.current = true;
     });
 
     const unsubDisplays = window.electronAPI.onDisplaysUpdated((list) => {
@@ -288,20 +355,21 @@ const OperatorConsole: React.FC = () => {
     };
   }, []);
 
-  // Autosave show whenever cues change
+  // Autosave show whenever cues change (including when all cues are deleted)
   useEffect(() => {
-    if (!window.electronAPI || cues.length === 0) return;
+    if (!window.electronAPI || !initialLoadDoneRef.current) return;
     const schema: ShowFileSchema = {
-      version: '1.0',
+      version: '1.4',
       showName,
       savedAt: new Date().toISOString(),
       masterVolume,
       defaultTransitionType: transitionType,
       defaultTransitionDuration: transitionDuration,
+      mosaicConfig,
       cues,
     };
     window.electronAPI.autosaveShow(JSON.stringify(schema, null, 2));
-  }, [cues, showName, masterVolume, transitionType, transitionDuration]);
+  }, [cues, showName, masterVolume, transitionType, transitionDuration, mosaicConfig]);
 
   // Load cue into Preview player when previewCueId changes
   useEffect(() => {
@@ -455,7 +523,7 @@ const OperatorConsole: React.FC = () => {
       isTestPatternRef.current = false;
       endActionTriggeredRef.current = false;
 
-      // Auto-advance Preview to the next cue in the playlist (PlaybackPro+ / Mitti workflow!)
+      // Auto-advance Preview to the next cue in the Cue List
       const idx = cuesRef.current.findIndex((c) => c.id === targetCue.id);
       if (idx >= 0 && idx + 1 < cuesRef.current.length) {
         const nextInList = cuesRef.current[idx + 1];
@@ -501,7 +569,7 @@ const OperatorConsole: React.FC = () => {
     [ensureAudioGraph, transitionType, transitionDuration]
   );
 
-  // Main 60Hz Engine Loop: Monitors Program timecode, End Actions, Audio Envelopes, VU Meters & 2nd Screen Sync
+  // Main 60Hz Engine Loop
   useEffect(() => {
     let rafId = 0;
     const dataL = new Uint8Array(128);
@@ -631,6 +699,8 @@ const OperatorConsole: React.FC = () => {
             scaleY: cueA.scaleY ?? 100,
             offsetX: cueA.offsetX ?? 0,
             offsetY: cueA.offsetY ?? 0,
+            videoWidth: cueA.width || 1920,
+            videoHeight: cueA.height || 1080,
             bgBlurEnabled: !!cueA.bgBlurEnabled,
             bgBlurAmount: cueA.bgBlurAmount ?? 90,
             bgBlurBrightness: cueA.bgBlurBrightness ?? 75,
@@ -656,6 +726,8 @@ const OperatorConsole: React.FC = () => {
             scaleY: cueB.scaleY ?? 100,
             offsetX: cueB.offsetX ?? 0,
             offsetY: cueB.offsetY ?? 0,
+            videoWidth: cueB.width || 1920,
+            videoHeight: cueB.height || 1080,
             bgBlurEnabled: !!cueB.bgBlurEnabled,
             bgBlurAmount: cueB.bgBlurAmount ?? 90,
             bgBlurBrightness: cueB.bgBlurBrightness ?? 75,
@@ -672,6 +744,13 @@ const OperatorConsole: React.FC = () => {
 
       if (window.electronAPI) {
         syncSeqRef.current += 1;
+        const effectiveDuration = activeCue
+          ? Math.max(
+              0,
+              (activeCue.outPoint > activeCue.inPoint ? activeCue.outPoint : activeCue.duration) -
+                (activeCue.inPoint || 0)
+            )
+          : 0;
         const syncState: OutputSyncState = {
           deckA: payloadA,
           deckB: payloadB,
@@ -721,7 +800,7 @@ const OperatorConsole: React.FC = () => {
             mosaicMode: mosaicConfig.mode,
             elapsed: activeVideo?.currentTime || 0,
             remaining: syncState.remainingTime,
-            duration: activeCue?.duration || 0,
+            duration: effectiveDuration,
             totalCues: cuesRef.current.length,
             masterVolume: masterVolRef.current,
             isMuted: masterMutedRef.current,
@@ -744,7 +823,7 @@ const OperatorConsole: React.FC = () => {
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [computeDeckEnvelopes, triggerTakeCue, previewCueId, showName]);
+  }, [computeDeckEnvelopes, triggerTakeCue, previewCueId, showName, transitionDuration, mosaicConfig.mode]);
 
   // Program transport handlers
   const handleTogglePgmPlay = useCallback(() => {
@@ -1085,6 +1164,9 @@ const OperatorConsole: React.FC = () => {
     previewCueId,
     programCueId,
     triggerTakeCue,
+    outputOpen,
+    mosaicConfig,
+    selectedDisplayId,
   ]);
 
   // Global Keyboard Shortcuts in Operator UI
@@ -1180,10 +1262,9 @@ const OperatorConsole: React.FC = () => {
   // Helper to update a cue
   const updateCue = (id: string, patch: Partial<VideoCue>) => {
     setCues((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    setIsDirty(true);
   };
 
-  // Apply geometry / aspect ratio / zoom / blur settings of a cue to all cues in the playlist
+  // Apply geometry / aspect ratio / zoom / blur settings of a cue to all cues in the Cue List
   const handleApplyGeometryToAllCues = (sourceCue: VideoCue) => {
     setCues((prev) =>
       prev.map((c) => ({
@@ -1201,7 +1282,6 @@ const OperatorConsole: React.FC = () => {
         bgBlurZoom: sourceCue.bgBlurZoom ?? 125,
       }))
     );
-    setIsDirty(true);
   };
 
   // Import video files by paths
@@ -1226,7 +1306,7 @@ const OperatorConsole: React.FC = () => {
         duration: probe.duration || 10,
         inPoint: 0,
         outPoint: probe.duration || 10,
-        endAction: 'hold', // Mitti default: Hold last frame
+        endAction: 'hold',
         transitionType: 'dissolve',
         transitionDuration: 1.0,
         volume: 100,
@@ -1255,6 +1335,9 @@ const OperatorConsole: React.FC = () => {
         height: probe.height,
         fps: probe.fps,
         videoCodec: probe.videoCodec,
+        videoProfile: probe.videoProfile,
+        pixelFormat: probe.pixelFormat,
+        bitrateKbps: probe.bitrateKbps,
         audioCodec: probe.audioCodec,
         audioChannels: probe.audioChannels,
         audioSampleRate: probe.audioSampleRate,
@@ -1276,7 +1359,6 @@ const OperatorConsole: React.FC = () => {
       }
       return updated;
     });
-    setIsDirty(true);
   };
 
   const handleAddVideos = async () => {
@@ -1287,81 +1369,20 @@ const OperatorConsole: React.FC = () => {
     }
   };
 
-  const handleGenerateDemos = async () => {
+  const handleAddFolder = async () => {
     if (!window.electronAPI) return;
-    setIsGeneratingDemos(true);
-    try {
-      const probes = await window.electronAPI.generateDemoClips();
-      const baseCount = cues.length;
-      const demoTitles = [
-        'Opening Cuenta Atrás (Test Pattern 1080p50)',
-        'Barras SMPTE HD + Tono 528Hz (1080p50)',
-        'Fondo Fractal Loop Escenario (1080p50)',
-      ];
-      const demoEndActions: EndAction[] = ['hold', 'black', 'loop'];
-      const demoColors: VideoCue['color'][] = ['emerald', 'blue', 'purple'];
-
-      const created: VideoCue[] = probes.map((probe: any, i: number) => ({
-        id: `demo_${Date.now()}_${i}`,
-        cueNumber: String(baseCount + i + 1).padStart(2, '0'),
-        name: demoTitles[i] || probe.fileName,
-        filePath: probe.filePath,
-        fileName: probe.fileName,
-        fileSize: probe.fileSize,
-        duration: probe.duration || 15,
-        inPoint: 0,
-        outPoint: probe.duration || 15,
-        endAction: demoEndActions[i] || 'hold',
-        transitionType: 'dissolve',
-        transitionDuration: 1.0,
-        volume: 85,
-        muted: false,
-        audioFadeIn: 0.5,
-        audioFadeOut: 1.0,
-        scaleMode: 'fit',
-        aspectRatio: 'native',
-        zoom: 100,
-        scaleX: 100,
-        scaleY: 100,
-        offsetX: 0,
-        offsetY: 0,
-        bgBlurEnabled: false,
-        bgBlurAmount: 90,
-        bgBlurBrightness: 75,
-        bgBlurZoom: 125,
-        opacity: 100,
-        rotation: 0,
-        flipH: false,
-        flipV: false,
-        videoFadeIn: 0,
-        videoFadeOut: 0,
-        playbackRate: 1,
-        width: probe.width,
-        height: probe.height,
-        fps: probe.fps,
-        videoCodec: probe.videoCodec,
-        audioCodec: probe.audioCodec,
-        audioChannels: probe.audioChannels,
-        audioSampleRate: probe.audioSampleRate,
-        container: probe.container,
-        isNativeCompatible: true,
-        thumbnailDataUrl: probe.thumbnailDataUrl,
-        exists: true,
-        color: demoColors[i] || 'none',
-        notes: 'Clip demo generado con FFmpeg 1080p50',
-      }));
-
-      setCues((prev) => [...prev, ...created]);
-      if (!previewCueId && created.length > 0) {
-        setPreviewCueId(created[0].id);
-        setSelectedCueId(created[0].id);
-      }
-    } finally {
-      setIsGeneratingDemos(false);
+    const paths = await window.electronAPI.selectVideoFolder();
+    if (paths && paths.length > 0) {
+      await importFilePaths(paths);
     }
   };
 
-  const handleOptimizeProxy = async (cue: VideoCue) => {
+  const handleLocateCue = async (cue: VideoCue) => {
+    if (!window.electronAPI) return;
+    await window.electronAPI.locateFileInFolder(cue.filePath);
+  };
+
+  const handleOptimizeProxy = async (cue: VideoCue, options?: ConvertVideoOptions) => {
     if (!window.electronAPI) return;
     updateCue(cue.id, { proxyProgress: 1 });
     try {
@@ -1369,6 +1390,7 @@ const OperatorConsole: React.FC = () => {
         cueId: cue.id,
         filePath: cue.filePath,
         duration: cue.duration,
+        options,
       });
       updateCue(cue.id, {
         proxyPath,
@@ -1395,6 +1417,9 @@ const OperatorConsole: React.FC = () => {
       height: probe.height,
       fps: probe.fps,
       videoCodec: probe.videoCodec,
+      videoProfile: probe.videoProfile,
+      pixelFormat: probe.pixelFormat,
+      bitrateKbps: probe.bitrateKbps,
       audioCodec: probe.audioCodec,
       isNativeCompatible: probe.isNativeCompatible,
       thumbnailDataUrl: probe.thumbnailDataUrl,
@@ -1405,7 +1430,7 @@ const OperatorConsole: React.FC = () => {
   const handleSaveShow = async () => {
     if (!window.electronAPI) return;
     const schema: ShowFileSchema = {
-      version: '1.0',
+      version: '1.4',
       showName,
       savedAt: new Date().toISOString(),
       masterVolume,
@@ -1414,13 +1439,7 @@ const OperatorConsole: React.FC = () => {
       mosaicConfig,
       cues,
     };
-    const savedPath = await window.electronAPI.saveShowFile(
-      JSON.stringify(schema, null, 2),
-      showName
-    );
-    if (savedPath) {
-      setIsDirty(false);
-    }
+    await window.electronAPI.saveShowFile(JSON.stringify(schema, null, 2), showName);
   };
 
   const handleOpenShow = async () => {
@@ -1429,7 +1448,7 @@ const OperatorConsole: React.FC = () => {
     if (!res) return;
     try {
       const parsed: ShowFileSchema = JSON.parse(res.content);
-      setShowName(parsed.showName || 'Show Cargado');
+      setShowName(parsed.showName || 'CuePro Show');
       setMasterVolume(parsed.masterVolume ?? 100);
       setTransitionType(parsed.defaultTransitionType || 'dissolve');
       setTransitionDuration(parsed.defaultTransitionDuration || 1.0);
@@ -1441,7 +1460,6 @@ const OperatorConsole: React.FC = () => {
         setPreviewCueId(parsed.cues[0].id);
         setSelectedCueId(parsed.cues[0].id);
       }
-      setIsDirty(false);
     } catch {}
   };
 
@@ -1451,8 +1469,7 @@ const OperatorConsole: React.FC = () => {
     setPreviewCueId(null);
     setProgramCueId(null);
     setSelectedCueId(null);
-    setShowName('Nuevo Show En Directo');
-    setIsDirty(false);
+    setShowName('Nuevo Show');
   };
 
   const handleToggleOutputWindow = async (windowed = false, forceOpen = false) => {
@@ -1474,18 +1491,63 @@ const OperatorConsole: React.FC = () => {
     setDisplays(list);
   };
 
-  // Drag and drop files anywhere onto the app
+  // Drag and drop files or folders onto the app
   const handleDropFiles = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
     if (!window.electronAPI) return;
     const files = Array.from(e.dataTransfer.files);
-    const paths = files
+    if (files.length === 0) return;
+    const rawPaths = files
       .map((f) => window.electronAPI!.getPathForFile(f))
       .filter((p) => !!p);
-    if (paths.length > 0) {
-      await importFilePaths(paths);
+    if (rawPaths.length > 0) {
+      const expanded = await window.electronAPI.expandDroppedPaths(rawPaths);
+      if (expanded && expanded.length > 0) {
+        await importFilePaths(expanded);
+      }
     }
+  };
+
+  // Resizable Horizontal Splitter (Monitors Height vs CueList Height)
+  const startResizeHorizontal = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startPct = upperHeightPct;
+    const totalH = workspaceRef.current?.clientHeight || window.innerHeight - 48;
+
+    const onMove = (ev: MouseEvent) => {
+      const deltaY = ev.clientY - startY;
+      const deltaPct = (deltaY / totalH) * 100;
+      const next = Math.max(26, Math.min(72, startPct + deltaPct));
+      setUpperHeightPct(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Resizable Vertical Splitter (CueList Width vs Inspector Width)
+  const startResizeVertical = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = inspectorWidthPx;
+
+    const onMove = (ev: MouseEvent) => {
+      const deltaX = startX - ev.clientX;
+      const maxW = Math.min(620, Math.floor(window.innerWidth * 0.48));
+      const next = Math.max(280, Math.min(maxW, startW + deltaX));
+      setInspectorWidthPx(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   const deckACue = cues.find((c) => c.id === deckACueId);
@@ -1496,6 +1558,15 @@ const OperatorConsole: React.FC = () => {
     displays[0];
   const basePhysW = activeOutputDisplay?.physicalWidth || 2560;
   const basePhysH = activeOutputDisplay?.physicalHeight || 1440;
+
+  const totalCanvasWidth =
+    mosaicConfig.mode === 'horizontal_2x1'
+      ? basePhysW * 2 - (mosaicConfig.overlapPx || 0)
+      : basePhysW;
+  const totalCanvasHeight =
+    mosaicConfig.mode === 'vertical_1x2'
+      ? basePhysH * 2 - (mosaicConfig.overlapPx || 0)
+      : basePhysH;
 
   const currentDeckAPayload: DeckSyncPayload = {
     cueId: deckACueId,
@@ -1510,6 +1581,8 @@ const OperatorConsole: React.FC = () => {
     scaleY: deckACue?.scaleY ?? 100,
     offsetX: deckACue?.offsetX ?? 0,
     offsetY: deckACue?.offsetY ?? 0,
+    videoWidth: deckACue?.width || 1920,
+    videoHeight: deckACue?.height || 1080,
     bgBlurEnabled: !!deckACue?.bgBlurEnabled,
     bgBlurAmount: deckACue?.bgBlurAmount ?? 90,
     bgBlurBrightness: deckACue?.bgBlurBrightness ?? 75,
@@ -1533,6 +1606,8 @@ const OperatorConsole: React.FC = () => {
     scaleY: deckBCue?.scaleY ?? 100,
     offsetX: deckBCue?.offsetX ?? 0,
     offsetY: deckBCue?.offsetY ?? 0,
+    videoWidth: deckBCue?.width || 1920,
+    videoHeight: deckBCue?.height || 1080,
     bgBlurEnabled: !!deckBCue?.bgBlurEnabled,
     bgBlurAmount: deckBCue?.bgBlurAmount ?? 90,
     bgBlurBrightness: deckBCue?.bgBlurBrightness ?? 75,
@@ -1548,7 +1623,9 @@ const OperatorConsole: React.FC = () => {
       className="app-shell"
       onDragOver={(e) => {
         e.preventDefault();
-        setIsDraggingOver(true);
+        if (Array.from(e.dataTransfer.types).includes('Files')) {
+          setIsDraggingOver(true);
+        }
       }}
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node)) return;
@@ -1559,33 +1636,15 @@ const OperatorConsole: React.FC = () => {
       {isDraggingOver && (
         <div className="dropzone-overlay">
           <div className="dropzone-box">
-            <h2>SOLTAR VÍDEOS PARA AÑADIR A LA ESCALETA</h2>
+            <h2>SOLTAR VÍDEOS O CARPETAS PARA AÑADIR AL CUE LIST</h2>
             <p>Soporte directo para MP4, MOV (ProRes/H.264), MKV, WebM, AVI, MXF</p>
           </div>
         </div>
       )}
 
-      {/* ================= TOP MASTER BROADCAST HEADER ================= */}
+      {/* ================= CLEAN TOP BAR (macOS Style) ================= */}
       <header className="top-broadcast-bar">
         <div className="brand-and-show">
-          <div className="brand-logo">
-            <span className="brand-dot" />
-            <strong>CUEPRO</strong>
-            <span className="brand-sub">STUDIO v1.3.0</span>
-          </div>
-
-          <input
-            type="text"
-            className="show-name-input"
-            value={showName}
-            onChange={(e) => {
-              setShowName(e.target.value);
-              setIsDirty(true);
-            }}
-            title="Nombre del Show"
-          />
-          {isDirty && <span className="unsaved-dot" title="Cambios guardados en auto-save" />}
-
           <div className="show-file-btns">
             <button className="top-btn" onClick={handleNewShow} title="Nuevo Show">
               <FilePlus size={14} />
@@ -1602,7 +1661,7 @@ const OperatorConsole: React.FC = () => {
           </div>
         </div>
 
-        {/* Center Master Clocks (PlaybackPro+ / Mitti Big Timers) */}
+        {/* Center Master Clocks (Elapsed & Remaining) */}
         <div className="master-clocks-strip">
           <div className="clock-box">
             <span className="clock-label">TRANSCURRIDO (PGM)</span>
@@ -1625,11 +1684,6 @@ const OperatorConsole: React.FC = () => {
               -{formatTimecode(pgmRemaining, programCue?.fps || 25, true)}
             </span>
           </div>
-
-          <div className="clock-box">
-            <span className="clock-label">HORA SISTEMA</span>
-            <span className="clock-digits wall">{wallClock}</span>
-          </div>
         </div>
 
         {/* Right Output Display, Mosaic & Companion Controls */}
@@ -1642,9 +1696,23 @@ const OperatorConsole: React.FC = () => {
               onChange={(e) => {
                 const id = Number(e.target.value);
                 setSelectedDisplayId(id);
-                setMosaicConfig((prev) => ({ ...prev, display1Id: id }));
+                const nextMosaic = { ...mosaicConfig, display1Id: id };
+                setMosaicConfig(nextMosaic);
+                if (outputOpen && window.electronAPI) {
+                  window.electronAPI
+                    .setOutputWindow({
+                      open: true,
+                      displayId: id,
+                      windowed: false,
+                      mosaicConfig: nextMosaic,
+                    })
+                    .then((res) => {
+                      setOutputOpen(res.isOpen);
+                      setIsSpannedActive(!!res.isSpanned);
+                    });
+                }
               }}
-              title="Seleccionar Salida 1 / Proyector Principal"
+              title="Seleccionar Pantalla de Salida Fullscreen"
             >
               {displays.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -1657,7 +1725,7 @@ const OperatorConsole: React.FC = () => {
           <button
             className={`top-btn mosaic-top-btn ${mosaicConfig.mode !== 'single' ? 'active-cyan' : ''}`}
             onClick={() => setIsMosaicModalOpen(true)}
-            title="Configurar Mosaico Síncrono (Horizontal 2×1, Vertical 1×2, Espejo Dual) y Formatos Custom EDID"
+            title="Configurar Mosaico Síncrono (Horizontal 2×1, Vertical 1×2, Espejo Dual)"
           >
             <Layers size={14} />
             <span>
@@ -1667,35 +1735,24 @@ const OperatorConsole: React.FC = () => {
                 ? 'Mosaico 1×2 V'
                 : mosaicConfig.mode === 'mirror_2x'
                 ? 'Espejo Dual'
-                : 'Mosaico / Pantallas'}
+                : 'Mosaico'}
             </span>
           </button>
 
           <button
             className={`output-live-btn ${outputOpen ? 'live' : ''}`}
             onClick={() => handleToggleOutputWindow(false)}
-            title="Activar / Desactivar Salida en Pantallas / Mosaico"
+            title="Activar / Desactivar Salida Fullscreen automática en la pantalla seleccionada"
           >
             <span className="live-indicator" />
             <span>
               {outputOpen
                 ? mosaicConfig.mode === 'single'
                   ? 'SALIDA: ON'
-                  : `MOSAICO: ON`
+                  : 'MOSAICO: ON'
                 : 'ACTIVAR SALIDA'}
             </span>
           </button>
-
-          {!outputOpen && (
-            <button
-              className="top-btn"
-              onClick={() => handleToggleOutputWindow(true)}
-              title="Abrir ventana flotante de salida para pruebas en 1 solo monitor"
-            >
-              <ExternalLink size={13} />
-              <span>Ventana Test</span>
-            </button>
-          )}
 
           <button
             className={`top-btn ${showOSD ? 'active-cyan' : ''}`}
@@ -1709,241 +1766,253 @@ const OperatorConsole: React.FC = () => {
           <button
             className="top-btn companion-btn"
             onClick={() => setIsRemoteModalOpen(true)}
-            title="Configurar StreamDeck / Bitfocus Companion (OSC / HTTP) y Atajos"
+            title="Configurar Bitfocus Companion (OSC / HTTP) y Atajos"
           >
             <Radio size={14} />
-            <span>Companion / OSC</span>
-          </button>
-
-          <button
-            className="panic-master-btn"
-            onClick={handlePanic}
-            title="PANIC: Pausar todo y poner Salida en Negro inmediatamente (ESC)"
-          >
-            <AlertOctagon size={15} />
-            <span>PANIC</span>
+            <span>Companion</span>
           </button>
         </div>
       </header>
 
-      {/* ================= UPPER SECTION: DUAL MONITORS (PRV + BRIDGE + PGM + AUDIO) ================= */}
-      <section className="upper-monitors-section">
-        <DualMonitors
-          previewCue={previewCue}
-          programCue={programCue}
-          previewVideoRef={previewVideoRef}
-          pgmVideoARef={pgmVideoARef}
-          pgmVideoBRef={pgmVideoBRef}
-          deckA={currentDeckAPayload}
-          deckB={currentDeckBPayload}
-          activeDeck={activeDeck}
-          transitionProgress={transitionProgress}
-          prvPlaying={prvPlaying}
-          prvTime={prvTime}
-          prvAudition={prvAudition}
-          onTogglePrvPlay={() => {
-            const v = previewVideoRef.current;
-            if (!v || !previewCue) return;
-            if (v.paused) {
+      {/* ================= RESIZABLE WORKSPACE BODY ================= */}
+      <div className="workspace-body" ref={workspaceRef}>
+        {/* UPPER SECTION: DUAL MONITORS (PRV + BRIDGE + PGM + AUDIO) */}
+        <section
+          className="upper-monitors-section"
+          style={{ height: `${upperHeightPct}%` }}
+        >
+          <DualMonitors
+            previewCue={previewCue}
+            programCue={programCue}
+            previewVideoRef={previewVideoRef}
+            pgmVideoARef={pgmVideoARef}
+            pgmVideoBRef={pgmVideoBRef}
+            deckA={currentDeckAPayload}
+            deckB={currentDeckBPayload}
+            activeDeck={activeDeck}
+            transitionProgress={transitionProgress}
+            prvPlaying={prvPlaying}
+            prvTime={prvTime}
+            prvAudition={prvAudition}
+            onTogglePrvPlay={() => {
+              const v = previewVideoRef.current;
+              if (!v || !previewCue) return;
+              if (v.paused) {
+                const outPt =
+                  previewCue.outPoint > previewCue.inPoint
+                    ? previewCue.outPoint
+                    : previewCue.duration;
+                if (v.currentTime >= outPt - 0.05) {
+                  v.currentTime = previewCue.inPoint || 0;
+                }
+                v.play().catch(() => {});
+              } else {
+                v.pause();
+              }
+            }}
+            onSeekPrv={(t) => {
+              if (previewVideoRef.current) {
+                previewVideoRef.current.currentTime = t;
+                setPrvTime(t);
+              }
+            }}
+            onSetPrvIn={() => {
+              if (!previewCue) return;
               const outPt =
                 previewCue.outPoint > previewCue.inPoint
                   ? previewCue.outPoint
                   : previewCue.duration;
-              if (v.currentTime >= outPt - 0.05) {
-                v.currentTime = previewCue.inPoint || 0;
-              }
-              v.play().catch(() => {});
-            } else {
+              updateCue(previewCue.id, { inPoint: Math.min(prvTime, outPt - 0.1) });
+            }}
+            onSetPrvOut={() => {
+              if (!previewCue) return;
+              updateCue(previewCue.id, {
+                outPoint: Math.max(prvTime, previewCue.inPoint + 0.1),
+              });
+            }}
+            onResetPrvInOut={() => {
+              if (!previewCue) return;
+              updateCue(previewCue.id, { inPoint: 0, outPoint: previewCue.duration });
+            }}
+            onStepPrvFrame={(dir) => {
+              const v = previewVideoRef.current;
+              if (!v || !previewCue) return;
               v.pause();
+              const step = 1 / (previewCue.fps || 25);
+              v.currentTime = Math.max(
+                0,
+                Math.min(previewCue.duration, (v.currentTime || 0) + dir * step)
+              );
+              setPrvTime(v.currentTime);
+            }}
+            onTogglePrvAudition={() => setPrvAudition((a) => !a)}
+            onPrvGotoEnd={(sec) => {
+              const v = previewVideoRef.current;
+              if (!v || !previewCue) return;
+              const outPt =
+                previewCue.outPoint > previewCue.inPoint
+                  ? previewCue.outPoint
+                  : previewCue.duration;
+              v.currentTime = Math.max(previewCue.inPoint || 0, outPt - sec);
+              setPrvTime(v.currentTime);
+              v.play().catch(() => {});
+            }}
+            transitionType={transitionType}
+            transitionDuration={transitionDuration}
+            onChangeTransitionType={(t) => {
+              setTransitionType(t);
+              if (previewCue) updateCue(previewCue.id, { transitionType: t });
+            }}
+            onChangeTransitionDuration={(d) => {
+              setTransitionDuration(d);
+              if (previewCue) updateCue(previewCue.id, { transitionDuration: d });
+            }}
+            onTake={() => {
+              if (previewCueId) triggerTakeCue(previewCueId, false);
+            }}
+            onCutImmediate={() => {
+              if (previewCueId) triggerTakeCue(previewCueId, true);
+            }}
+            isBlackout={isBlackout}
+            onToggleBlackout={() =>
+              setIsBlackout((b) => {
+                isBlackoutRef.current = !b;
+                return !b;
+              })
             }
-          }}
-          onSeekPrv={(t) => {
-            if (previewVideoRef.current) {
-              previewVideoRef.current.currentTime = t;
-              setPrvTime(t);
+            isFrozen={isFrozen}
+            onToggleFreeze={() =>
+              setIsFrozen((f) => {
+                isFrozenRef.current = !f;
+                return !f;
+              })
             }
-          }}
-          onSetPrvIn={() => {
-            if (!previewCue) return;
-            const outPt =
-              previewCue.outPoint > previewCue.inPoint
-                ? previewCue.outPoint
-                : previewCue.duration;
-            updateCue(previewCue.id, { inPoint: Math.min(prvTime, outPt - 0.1) });
-          }}
-          onSetPrvOut={() => {
-            if (!previewCue) return;
-            updateCue(previewCue.id, {
-              outPoint: Math.max(prvTime, previewCue.inPoint + 0.1),
-            });
-          }}
-          onResetPrvInOut={() => {
-            if (!previewCue) return;
-            updateCue(previewCue.id, { inPoint: 0, outPoint: previewCue.duration });
-          }}
-          onStepPrvFrame={(dir) => {
-            const v = previewVideoRef.current;
-            if (!v || !previewCue) return;
-            v.pause();
-            const step = 1 / (previewCue.fps || 25);
-            v.currentTime = Math.max(
-              0,
-              Math.min(previewCue.duration, (v.currentTime || 0) + dir * step)
-            );
-            setPrvTime(v.currentTime);
-          }}
-          onTogglePrvAudition={() => setPrvAudition((a) => !a)}
-          onPrvGotoEnd={(sec) => {
-            const v = previewVideoRef.current;
-            if (!v || !previewCue) return;
-            const outPt =
-              previewCue.outPoint > previewCue.inPoint
-                ? previewCue.outPoint
-                : previewCue.duration;
-            v.currentTime = Math.max(previewCue.inPoint || 0, outPt - sec);
-            setPrvTime(v.currentTime);
-            v.play().catch(() => {});
-          }}
-          transitionType={transitionType}
-          transitionDuration={transitionDuration}
-          onChangeTransitionType={(t) => {
-            setTransitionType(t);
-            if (previewCue) updateCue(previewCue.id, { transitionType: t });
-          }}
-          onChangeTransitionDuration={(d) => {
-            setTransitionDuration(d);
-            if (previewCue) updateCue(previewCue.id, { transitionDuration: d });
-          }}
-          onTake={() => {
-            if (previewCueId) triggerTakeCue(previewCueId, false);
-          }}
-          onCutImmediate={() => {
-            if (previewCueId) triggerTakeCue(previewCueId, true);
-          }}
-          isBlackout={isBlackout}
-          onToggleBlackout={() =>
-            setIsBlackout((b) => {
-              isBlackoutRef.current = !b;
-              return !b;
-            })
-          }
-          isFrozen={isFrozen}
-          onToggleFreeze={() =>
-            setIsFrozen((f) => {
-              isFrozenRef.current = !f;
-              return !f;
-            })
-          }
-          isTestPattern={isTestPattern}
-          onToggleTestPattern={() =>
-            setIsTestPattern((t) => {
-              isTestPatternRef.current = !t;
-              return !t;
-            })
-          }
-          pgmPlaying={pgmPlaying}
-          pgmTime={pgmTime}
-          pgmRemaining={pgmRemaining}
-          onTogglePgmPlay={handleTogglePgmPlay}
-          onRestartPgm={handleRestartPgm}
-          onSeekPgm={handleSeekPgm}
-          onPgmGotoEnd={handlePgmGotoEnd}
-          onChangePgmEndAction={(act: EndAction) => {
-            if (programCueId) {
-              endActionTriggeredRef.current = false;
-              updateCue(programCueId, { endAction: act });
+            isTestPattern={isTestPattern}
+            onToggleTestPattern={() =>
+              setIsTestPattern((t) => {
+                isTestPatternRef.current = !t;
+                return !t;
+              })
             }
-          }}
-          onUpdateCue={updateCue}
-          masterVolume={masterVolume}
-          isMasterMuted={isMasterMuted}
-          onChangeMasterVolume={(val) => {
-            setMasterVolume(val);
-            if (isMasterMuted && val > 0) setIsMasterMuted(false);
-          }}
-          onToggleMasterMute={() => setIsMasterMuted((m) => !m)}
-          vuLevels={vuLevels}
-          mosaicConfig={mosaicConfig}
-          totalCanvasWidth={
-            mosaicConfig.mode === 'horizontal_2x1'
-              ? basePhysW * 2 - (mosaicConfig.overlapPx || 0)
-              : basePhysW
-          }
-          totalCanvasHeight={
-            mosaicConfig.mode === 'vertical_1x2'
-              ? basePhysH * 2 - (mosaicConfig.overlapPx || 0)
-              : basePhysH
-          }
-        />
-      </section>
+            pgmPlaying={pgmPlaying}
+            pgmTime={pgmTime}
+            pgmRemaining={pgmRemaining}
+            onTogglePgmPlay={handleTogglePgmPlay}
+            onRestartPgm={handleRestartPgm}
+            onSeekPgm={handleSeekPgm}
+            onPgmGotoEnd={handlePgmGotoEnd}
+            onChangePgmEndAction={(act: EndAction) => {
+              if (programCueId) {
+                endActionTriggeredRef.current = false;
+                updateCue(programCueId, { endAction: act });
+              }
+            }}
+            onUpdateCue={updateCue}
+            masterVolume={masterVolume}
+            isMasterMuted={isMasterMuted}
+            onChangeMasterVolume={(val) => {
+              setMasterVolume(val);
+              if (isMasterMuted && val > 0) setIsMasterMuted(false);
+            }}
+            onToggleMasterMute={() => setIsMasterMuted((m) => !m)}
+            vuLevels={vuLevels}
+            mosaicConfig={mosaicConfig}
+            totalCanvasWidth={totalCanvasWidth}
+            totalCanvasHeight={totalCanvasHeight}
+          />
+        </section>
 
-      {/* ================= LOWER SECTION: CUE LIST + INSPECTOR ================= */}
-      <section className="lower-workspace-section">
-        <CueList
-          cues={cues}
-          selectedCueId={selectedCueId}
-          previewCueId={previewCueId}
-          programCueId={programCueId}
-          isGeneratingDemos={isGeneratingDemos}
-          onSelectCue={(id) => setSelectedCueId(id)}
-          onLoadToPreview={(id) => {
-            setPreviewCueId(id);
-            setSelectedCueId(id);
-          }}
-          onTakeCueToProgram={(id) => triggerTakeCue(id, false)}
-          onUpdateCue={updateCue}
-          onDeleteCue={(id) => {
-            setCues((prev) => prev.filter((c) => c.id !== id));
-            if (previewCueId === id) setPreviewCueId(null);
-            if (selectedCueId === id) setSelectedCueId(null);
-            setIsDirty(true);
-          }}
-          onDuplicateCue={(id) => {
-            const idx = cues.findIndex((c) => c.id === id);
-            if (idx < 0) return;
-            const orig = cues[idx];
-            const copy: VideoCue = {
-              ...orig,
-              id: `cue_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-              cueNumber: `${orig.cueNumber}B`,
-              name: `${orig.name} (Copia)`,
-            };
-            const next = [...cues];
-            next.splice(idx + 1, 0, copy);
-            setCues(next);
-            setIsDirty(true);
-          }}
-          onMoveCue={(index, dir) => {
-            const target = index + dir;
-            if (target < 0 || target >= cues.length) return;
-            const next = [...cues];
-            const [item] = next.splice(index, 1);
-            next.splice(target, 0, item);
-            setCues(next);
-            setIsDirty(true);
-          }}
-          onReorderCues={(from, to) => {
-            const next = [...cues];
-            const [item] = next.splice(from, 1);
-            next.splice(to, 0, item);
-            setCues(next);
-            setIsDirty(true);
-          }}
-          onAddVideos={handleAddVideos}
-          onGenerateDemos={handleGenerateDemos}
-          onOptimizeProxy={handleOptimizeProxy}
-          onRelinkCue={handleRelinkCue}
-        />
+        {/* Horizontal Splitter Handle */}
+        <div
+          className="resizer-horizontal"
+          onMouseDown={startResizeHorizontal}
+          title="Arrastra arriba o abajo para ajustar el tamaño de los monitores y del Cue List"
+        >
+          <div className="resizer-grip-pill" />
+        </div>
 
-        <CueInspector
-          cue={selectedCue}
-          prvCurrentTime={prvTime}
-          onUpdateCue={updateCue}
-          onApplyGeometryToAllCues={handleApplyGeometryToAllCues}
-          onOptimizeProxy={handleOptimizeProxy}
-          onRelinkCue={handleRelinkCue}
-        />
-      </section>
+        {/* LOWER SECTION: CUE LIST + VERTICAL SPLITTER + INSPECTOR */}
+        <section className="lower-workspace-section">
+          <div className="cuelist-container-flex">
+            <CueList
+              cues={cues}
+              selectedCueId={selectedCueId}
+              previewCueId={previewCueId}
+              programCueId={programCueId}
+              onSelectCue={(id) => setSelectedCueId(id)}
+              onLoadToPreview={(id) => {
+                setPreviewCueId(id);
+                setSelectedCueId(id);
+              }}
+              onTakeCueToProgram={(id) => triggerTakeCue(id, false)}
+              onUpdateCue={updateCue}
+              onDeleteCue={(id) => {
+                setCues((prev) => prev.filter((c) => c.id !== id));
+                if (previewCueId === id) setPreviewCueId(null);
+                if (selectedCueId === id) setSelectedCueId(null);
+              }}
+              onDuplicateCue={(id) => {
+                const idx = cues.findIndex((c) => c.id === id);
+                if (idx < 0) return;
+                const orig = cues[idx];
+                const copy: VideoCue = {
+                  ...orig,
+                  id: `cue_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  cueNumber: `${orig.cueNumber}B`,
+                  name: `${orig.name} (Copia)`,
+                };
+                const next = [...cues];
+                next.splice(idx + 1, 0, copy);
+                setCues(next);
+              }}
+              onMoveCue={(index, dir) => {
+                const target = index + dir;
+                if (target < 0 || target >= cues.length) return;
+                const next = [...cues];
+                const [item] = next.splice(index, 1);
+                next.splice(target, 0, item);
+                setCues(next);
+              }}
+              onReorderCues={(from, to) => {
+                const next = [...cues];
+                const [item] = next.splice(from, 1);
+                next.splice(to, 0, item);
+                setCues(next);
+              }}
+              onAddVideos={handleAddVideos}
+              onAddFolder={handleAddFolder}
+              onLocateCue={handleLocateCue}
+              onOptimizeProxy={(cue) => handleOptimizeProxy(cue)}
+              onRelinkCue={handleRelinkCue}
+            />
+          </div>
+
+          {/* Vertical Splitter Handle */}
+          <div
+            className="resizer-vertical"
+            onMouseDown={startResizeVertical}
+            title="Arrastra a izquierda o derecha para ampliar o reducir el panel de ajustes"
+          >
+            <div className="resizer-grip-pill-v" />
+          </div>
+
+          <div
+            className="inspector-container-fixed"
+            style={{ width: `${inspectorWidthPx}px` }}
+          >
+            <CueInspector
+              cue={selectedCue}
+              prvCurrentTime={prvTime}
+              totalCanvasWidth={totalCanvasWidth}
+              totalCanvasHeight={totalCanvasHeight}
+              onUpdateCue={updateCue}
+              onApplyGeometryToAllCues={handleApplyGeometryToAllCues}
+              onOptimizeProxy={handleOptimizeProxy}
+              onRelinkCue={handleRelinkCue}
+            />
+          </div>
+        </section>
+      </div>
 
       {/* Remote Companion / Shortcuts Modal */}
       <RemoteCompanionModal
@@ -1963,7 +2032,6 @@ const OperatorConsole: React.FC = () => {
         isSpannedActive={isSpannedActive}
         onChangeMosaicConfig={(next) => {
           setMosaicConfig(next);
-          setIsDirty(true);
         }}
         onRefreshDisplays={handleRefreshDisplays}
         onApplyAndLaunchOutput={(windowed) => {

@@ -275,6 +275,8 @@ export const OutputView: React.FC = () => {
               flipV: state.deckA.flipV,
               canvasWidth: viewport.canvasWidth,
               canvasHeight: viewport.canvasHeight,
+              videoWidth: state.deckA.videoWidth,
+              videoHeight: state.deckA.videoHeight,
             })}
           />
         </div>
@@ -314,6 +316,8 @@ export const OutputView: React.FC = () => {
               flipV: state.deckB.flipV,
               canvasWidth: viewport.canvasWidth,
               canvasHeight: viewport.canvasHeight,
+              videoWidth: state.deckB.videoWidth,
+              videoHeight: state.deckB.videoHeight,
             })}
           />
         </div>

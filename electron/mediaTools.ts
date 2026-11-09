@@ -14,6 +14,9 @@ export interface MediaProbeResult {
   height: number;
   fps: number;
   videoCodec: string;
+  videoProfile?: string;
+  pixelFormat?: string;
+  bitrateKbps?: number;
   audioCodec: string;
   audioChannels: number;
   audioSampleRate: number;
@@ -21,6 +24,12 @@ export interface MediaProbeResult {
   isNativeCompatible: boolean;
   thumbnailDataUrl?: string;
   exists: boolean;
+}
+
+export interface ConvertVideoOptions {
+  targetCodec?: 'h264' | 'h264_intra' | 'hevc' | 'prores';
+  quality?: 'high' | 'medium' | 'light';
+  resolution?: 'original' | '1080p' | '720p';
 }
 
 const CHROMIUM_NATIVE_VIDEO_CODECS = new Set([
@@ -35,6 +44,47 @@ const CHROMIUM_NATIVE_VIDEO_CODECS = new Set([
 ]);
 
 const CHROMIUM_NATIVE_EXTS = new Set(['.mp4', '.webm', '.m4v', '.mov', '.ogg', '.ogv', '.mkv']);
+
+export const VIDEO_EXTENSIONS = new Set([
+  '.mp4',
+  '.mov',
+  '.mkv',
+  '.webm',
+  '.avi',
+  '.mxf',
+  '.m4v',
+  '.wmv',
+  '.mpg',
+  '.mpeg',
+  '.ts',
+  '.flv',
+  '.ogv',
+]);
+
+export function expandPathsToVideoFiles(inputPaths: string[]): string[] {
+  const result: string[] = [];
+  const visit = (p: string) => {
+    try {
+      if (!fs.existsSync(p)) return;
+      const stat = fs.statSync(p);
+      if (stat.isDirectory()) {
+        const entries = fs.readdirSync(p);
+        for (const entry of entries) {
+          visit(path.join(p, entry));
+        }
+      } else if (stat.isFile()) {
+        const ext = path.extname(p).toLowerCase();
+        if (VIDEO_EXTENSIONS.has(ext)) {
+          result.push(p);
+        }
+      }
+    } catch {}
+  };
+  for (const p of inputPaths) {
+    visit(p);
+  }
+  return result;
+}
 
 export function getFfmpegPath(): string {
   if (ffmpegStatic) {
@@ -145,6 +195,11 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
         }
 
         const videoCodec = (vStream.codec_name || 'unknown').toLowerCase();
+        const videoProfile = vStream.profile || '';
+        const pixelFormat = vStream.pix_fmt || 'yuv420p';
+        const bitrateKbps = format.bit_rate
+          ? Math.round(parseInt(format.bit_rate, 10) / 1000)
+          : undefined;
         const audioCodec = (aStream.codec_name || 'none').toLowerCase();
         const audioChannels = parseInt(aStream.channels, 10) || 0;
         const audioSampleRate = parseInt(aStream.sample_rate, 10) || 48000;
@@ -152,7 +207,10 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
         const isNativeCompatible =
           CHROMIUM_NATIVE_VIDEO_CODECS.has(videoCodec) && CHROMIUM_NATIVE_EXTS.has(ext);
 
-        const thumbnailDataUrl = await extractThumbnail(filePath, Math.min(Math.max(duration * 0.15, 0.5), 5));
+        const thumbnailDataUrl = await extractThumbnail(
+          filePath,
+          Math.min(Math.max(duration * 0.15, 0.5), 5)
+        );
 
         resolve({
           filePath,
@@ -163,6 +221,9 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
           height,
           fps,
           videoCodec,
+          videoProfile,
+          pixelFormat,
+          bitrateKbps,
           audioCodec,
           audioChannels,
           audioSampleRate,
@@ -193,7 +254,10 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
   });
 }
 
-export async function extractThumbnail(filePath: string, timeSec: number): Promise<string | undefined> {
+export async function extractThumbnail(
+  filePath: string,
+  timeSec: number
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     const ffmpeg = getFfmpegPath();
     const args = [
@@ -234,15 +298,28 @@ export async function transcodeToPlayableMp4(
   inputPath: string,
   cacheDir: string,
   durationSec: number,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
+  options?: ConvertVideoOptions
 ): Promise<string> {
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
   }
 
-  const hash = crypto.createHash('md5').update(inputPath + fs.statSync(inputPath).mtimeMs).digest('hex').slice(0, 10);
-  const baseName = path.basename(inputPath, path.extname(inputPath)).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const outputPath = path.join(cacheDir, `${baseName}_${hash}_proxy.mp4`);
+  const targetCodec = options?.targetCodec || 'h264';
+  const quality = options?.quality || 'high';
+  const resolution = options?.resolution || 'original';
+
+  const optSig = `${targetCodec}_${quality}_${resolution}`;
+  const hash = crypto
+    .createHash('md5')
+    .update(inputPath + fs.statSync(inputPath).mtimeMs + optSig)
+    .digest('hex')
+    .slice(0, 10);
+  const baseName = path
+    .basename(inputPath, path.extname(inputPath))
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  const extOut = targetCodec === 'prores' ? 'mov' : 'mp4';
+  const outputPath = path.join(cacheDir, `${baseName}_${hash}_${optSig}.${extOut}`);
 
   if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
     onProgress(100);
@@ -251,29 +328,94 @@ export async function transcodeToPlayableMp4(
 
   return new Promise((resolve, reject) => {
     const ffmpeg = getFfmpegPath();
-    // Broadcast proxy: high quality H.264, short GOP (-g 15) for frame-accurate scrubbing in Mitti/PlaybackPro style, AAC 256k stereo
+    const crf = quality === 'high' ? '18' : quality === 'medium' ? '22' : '26';
+    const vfArgs: string[] = [];
+
+    if (resolution === '1080p') {
+      vfArgs.push('-vf', 'scale=-2:1080');
+    } else if (resolution === '720p') {
+      vfArgs.push('-vf', 'scale=-2:720');
+    }
+
+    let codecArgs: string[] = [];
+    if (targetCodec === 'prores') {
+      codecArgs = [
+        '-c:v',
+        'prores_ks',
+        '-profile:v',
+        quality === 'high' ? '2' : '0',
+        '-pix_fmt',
+        'yuv422p10le',
+        '-c:a',
+        'pcm_s16le',
+      ];
+    } else if (targetCodec === 'hevc') {
+      codecArgs = [
+        '-c:v',
+        'libx265',
+        '-preset',
+        'fast',
+        '-crf',
+        crf,
+        '-pix_fmt',
+        'yuv420p',
+        '-tag:v',
+        'hvc1',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '256k',
+        '-movflags',
+        '+faststart',
+      ];
+    } else if (targetCodec === 'h264_intra') {
+      codecArgs = [
+        '-c:v',
+        'libx264',
+        '-preset',
+        'superfast',
+        '-crf',
+        crf,
+        '-pix_fmt',
+        'yuv420p',
+        '-g',
+        '1',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '256k',
+        '-movflags',
+        '+faststart',
+      ];
+    } else {
+      codecArgs = [
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        crf,
+        '-pix_fmt',
+        'yuv420p',
+        '-g',
+        '15',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '256k',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+      ];
+    }
+
     const args = [
       '-y',
       '-i',
       inputPath,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '18',
-      '-pix_fmt',
-      'yuv420p',
-      '-g',
-      '15',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '256k',
-      '-ac',
-      '2',
-      '-movflags',
-      '+faststart',
+      ...vfArgs,
+      ...codecArgs,
       '-progress',
       'pipe:1',
       outputPath,

@@ -9,14 +9,14 @@ export interface AspectRatioOption {
 }
 
 export const ASPECT_RATIO_OPTIONS: AspectRatioOption[] = [
-  { id: 'native', label: 'Original del Vídeo (Nativo)', shortLabel: 'NATIVO', ratio: null },
-  { id: 'output', label: 'Adaptar a Pantalla de Salida', shortLabel: 'SALIDA', ratio: null },
-  { id: '16:9', label: '16:9 Widescreen (HD / QHD / 4K)', shortLabel: '16:9', ratio: 16 / 9 },
-  { id: '16:10', label: '16:10 Formato Proyector WUXGA', shortLabel: '16:10', ratio: 16 / 10 },
-  { id: '4:3', label: '4:3 Estándar Clásico', shortLabel: '4:3', ratio: 4 / 3 },
-  { id: '21:9', label: '21:9 Cinema Ultrawide', shortLabel: '21:9', ratio: 21 / 9 },
-  { id: '32:9', label: '32:9 Super Ultrawide / Mosaico 2×1', shortLabel: '32:9', ratio: 32 / 9 },
-  { id: '9:16', label: '9:16 Vertical (Reels / Totem LED)', shortLabel: '9:16', ratio: 9 / 16 },
+  { id: 'native', label: 'Original del Vídeo (Nativo)', shortLabel: 'Nativo', ratio: null },
+  { id: 'output', label: 'Ajustar a Lienzo de Salida (100%)', shortLabel: 'Salida', ratio: null },
+  { id: '16:9', label: '16:9 Widescreen', shortLabel: '16:9', ratio: 16 / 9 },
+  { id: '16:10', label: '16:10 WUXGA', shortLabel: '16:10', ratio: 16 / 10 },
+  { id: '4:3', label: '4:3 Clásico', shortLabel: '4:3', ratio: 4 / 3 },
+  { id: '21:9', label: '21:9 Ultrawide', shortLabel: '21:9', ratio: 21 / 9 },
+  { id: '32:9', label: '32:9 Dual Mosaico 2×1', shortLabel: '32:9', ratio: 32 / 9 },
+  { id: '9:16', label: '9:16 Vertical', shortLabel: '9:16', ratio: 9 / 16 },
   { id: '1:1', label: '1:1 Cuadrado', shortLabel: '1:1', ratio: 1 },
 ];
 
@@ -33,9 +33,24 @@ export interface GeometryParams {
   flipV?: boolean;
   canvasWidth?: number;
   canvasHeight?: number;
+  videoWidth?: number;
+  videoHeight?: number;
 }
 
-export function getForegroundVideoStyle(params: GeometryParams): React.CSSProperties {
+export interface ComputedVideoBox {
+  baseWidthPct: number;
+  baseHeightPct: number;
+  widthPct: number;
+  heightPct: number;
+  leftPct: number;
+  topPct: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  pixelX: number;
+  pixelY: number;
+}
+
+export function computeVideoBox(params: GeometryParams): ComputedVideoBox {
   const {
     scaleMode = 'fit',
     aspectRatio = 'native',
@@ -44,73 +59,113 @@ export function getForegroundVideoStyle(params: GeometryParams): React.CSSProper
     scaleY = 100,
     offsetX = 0,
     offsetY = 0,
-    rotation = 0,
-    flipH = false,
-    flipV = false,
     canvasWidth = 2560,
     canvasHeight = 1440,
+    videoWidth = 1920,
+    videoHeight = 1080,
   } = params;
 
-  const canvasAR = Math.max(0.1, canvasWidth) / Math.max(0.1, canvasHeight);
+  const cw = Math.max(1, canvasWidth);
+  const ch = Math.max(1, canvasHeight);
+  const vw = Math.max(1, videoWidth);
+  const vh = Math.max(1, videoHeight);
+
+  const canvasAR = cw / ch;
+  const nativeAR = vw / vh;
+
   const arOpt = ASPECT_RATIO_OPTIONS.find((o) => o.id === aspectRatio);
-  const targetAR = arOpt?.ratio ?? null;
+  const targetAR =
+    aspectRatio === 'output'
+      ? canvasAR
+      : aspectRatio === 'native'
+      ? nativeAR
+      : arOpt?.ratio ?? nativeAR;
 
-  let widthPct = 100;
-  let heightPct = 100;
-  let objectFit: React.CSSProperties['objectFit'] =
-    scaleMode === 'fill' ? 'cover' : scaleMode === 'stretch' ? 'fill' : 'contain';
+  let baseWidthPct = 100;
+  let baseHeightPct = 100;
 
-  if (aspectRatio === 'output') {
-    objectFit = 'fill';
-  } else if (targetAR !== null) {
-    // Force the video element into a box of targetAR, then stretch the video to fill that box
-    objectFit = 'fill';
-    if (scaleMode === 'fill') {
-      if (targetAR > canvasAR) {
-        heightPct = 100;
-        widthPct = (targetAR / canvasAR) * 100;
-      } else {
-        widthPct = 100;
-        heightPct = (canvasAR / targetAR) * 100;
-      }
+  if (scaleMode === 'stretch' || aspectRatio === 'output') {
+    baseWidthPct = 100;
+    baseHeightPct = 100;
+  } else if (scaleMode === 'fill') {
+    if (targetAR > canvasAR) {
+      baseHeightPct = 100;
+      baseWidthPct = (targetAR / canvasAR) * 100;
     } else {
-      // 'fit' or 'stretch' with explicit aspect ratio
-      if (targetAR > canvasAR) {
-        widthPct = 100;
-        heightPct = (canvasAR / targetAR) * 100;
-      } else {
-        heightPct = 100;
-        widthPct = (targetAR / canvasAR) * 100;
-      }
+      baseWidthPct = 100;
+      baseHeightPct = (canvasAR / targetAR) * 100;
+    }
+  } else {
+    // 'fit' mode
+    if (Math.abs(targetAR - canvasAR) < 0.01) {
+      baseWidthPct = 100;
+      baseHeightPct = 100;
+    } else if (targetAR > canvasAR) {
+      baseWidthPct = 100;
+      baseHeightPct = (canvasAR / targetAR) * 100;
+    } else {
+      baseHeightPct = 100;
+      baseWidthPct = (targetAR / canvasAR) * 100;
     }
   }
 
   const z = (zoom ?? 100) / 100;
-  const sx = z * ((scaleX ?? 100) / 100) * (flipH ? -1 : 1);
-  const sy = z * ((scaleY ?? 100) / 100) * (flipV ? -1 : 1);
+  const sx = (scaleX ?? 100) / 100;
+  const sy = (scaleY ?? 100) / 100;
+
+  const widthPct = Math.max(5, baseWidthPct * z * sx);
+  const heightPct = Math.max(5, baseHeightPct * z * sy);
+
+  const centerX = 50 + (offsetX ?? 0);
+  const centerY = 50 + (offsetY ?? 0);
+
+  const leftPct = centerX - widthPct / 2;
+  const topPct = centerY - heightPct / 2;
+
+  const pixelWidth = Math.round((widthPct / 100) * cw);
+  const pixelHeight = Math.round((heightPct / 100) * ch);
+  const pixelX = Math.round((leftPct / 100) * cw);
+  const pixelY = Math.round((topPct / 100) * ch);
+
+  return {
+    baseWidthPct,
+    baseHeightPct,
+    widthPct,
+    heightPct,
+    leftPct,
+    topPct,
+    pixelWidth,
+    pixelHeight,
+    pixelX,
+    pixelY,
+  };
+}
+
+export function getForegroundVideoStyle(params: GeometryParams): React.CSSProperties {
+  const box = computeVideoBox(params);
+  const { rotation = 0, flipH = false, flipV = false } = params;
 
   const transforms: string[] = [];
-  if (offsetX || offsetY) {
-    transforms.push(`translate(${offsetX}%, ${offsetY}%)`);
-  }
   if (rotation) {
     transforms.push(`rotate(${rotation}deg)`);
   }
-  if (sx !== 1 || sy !== 1) {
-    transforms.push(`scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`);
+  if (flipH || flipV) {
+    transforms.push(`scale(${flipH ? -1 : 1}, ${flipV ? -1 : 1})`);
   }
 
   return {
     position: 'absolute',
-    left: `${(100 - widthPct) / 2}%`,
-    top: `${(100 - heightPct) / 2}%`,
-    width: `${widthPct}%`,
-    height: `${heightPct}%`,
-    objectFit,
+    left: `${box.leftPct.toFixed(4)}%`,
+    top: `${box.topPct.toFixed(4)}%`,
+    width: `${box.widthPct.toFixed(4)}%`,
+    height: `${box.heightPct.toFixed(4)}%`,
+    objectFit: 'fill',
     transform: transforms.length > 0 ? transforms.join(' ') : undefined,
     transformOrigin: 'center center',
     backgroundColor: 'transparent',
     pointerEvents: 'none',
+    maxWidth: 'none',
+    maxHeight: 'none',
   };
 }
 
@@ -128,7 +183,6 @@ export function getBackgroundBlurVideoStyle(params: BgBlurParams): React.CSSProp
   const brightnessPct = params.bgBlurBrightness ?? 75;
   const bgZoomPct = params.bgBlurZoom ?? 125;
 
-  // Map 90% blur to ~54px Gaussian blur (and scale up slightly so blurred edges never show black borders)
   const blurPx = Math.max(0, Math.round((blurPct / 100) * 60));
   const scaleVal = Math.max(1.05, bgZoomPct / 100);
   const sx = scaleVal * (params.flipH ? -1 : 1);
@@ -151,5 +205,7 @@ export function getBackgroundBlurVideoStyle(params: BgBlurParams): React.CSSProp
     filter: `blur(${blurPx}px) brightness(${brightnessPct}%) saturate(120%)`,
     backgroundColor: '#000000',
     pointerEvents: 'none',
+    maxWidth: 'none',
+    maxHeight: 'none',
   };
 }

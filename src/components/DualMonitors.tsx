@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Play,
   Pause,
@@ -16,10 +16,6 @@ import {
   SkipForward,
   StepBack,
   StepForward,
-  ZoomIn,
-  ZoomOut,
-  Sparkles,
-  Maximize2,
 } from 'lucide-react';
 import {
   VideoCue,
@@ -27,16 +23,15 @@ import {
   EndAction,
   DeckSyncPayload,
   MosaicConfig,
-  ScaleMode,
-  AspectRatioMode,
 } from '../types/cue';
 import {
   formatTimecode,
   END_ACTION_LABELS,
   toMediaUrl,
+  gainToDbString,
 } from '../utils/timecode';
 import {
-  ASPECT_RATIO_OPTIONS,
+  computeVideoBox,
   getForegroundVideoStyle,
   getBackgroundBlurVideoStyle,
 } from '../utils/videoGeometry';
@@ -99,6 +94,8 @@ interface DualMonitorsProps {
   totalCanvasHeight?: number;
 }
 
+type DragMode = 'move' | 'nw' | 'ne' | 'sw' | 'se';
+
 export const DualMonitors: React.FC<DualMonitorsProps> = ({
   previewCue,
   programCue,
@@ -153,6 +150,48 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
   const prvBgVideoRef = useRef<HTMLVideoElement | null>(null);
   const pgmBgVideoARef = useRef<HTMLVideoElement | null>(null);
   const pgmBgVideoBRef = useRef<HTMLVideoElement | null>(null);
+
+  const prvViewportRef = useRef<HTMLDivElement | null>(null);
+  const pgmViewportRef = useRef<HTMLDivElement | null>(null);
+  const prvStageRef = useRef<HTMLDivElement | null>(null);
+  const pgmStageRef = useRef<HTMLDivElement | null>(null);
+
+  const [prvStageSize, setPrvStageSize] = useState<{ w: number; h: number }>({ w: 480, h: 270 });
+  const [pgmStageSize, setPgmStageSize] = useState<{ w: number; h: number }>({ w: 480, h: 270 });
+  const [activeGizmoTarget, setActiveGizmoTarget] = useState<'prv' | 'pgm' | null>(null);
+
+  // Measure Preview & Program outer chambers and fit the exact output/mosaic aspect ratio inside
+  useEffect(() => {
+    const computeFit = (el: HTMLDivElement | null, setter: (sz: { w: number; h: number }) => void) => {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const availW = Math.max(60, rect.width - 12);
+      const availH = Math.max(40, rect.height - 12);
+      const ar = Math.max(0.1, totalCanvasWidth) / Math.max(0.1, totalCanvasHeight);
+      let w = availW;
+      let h = availW / ar;
+      if (h > availH) {
+        h = availH;
+        w = availH * ar;
+      }
+      setter({ w: Math.round(w), h: Math.round(h) });
+    };
+
+    const updateAll = () => {
+      computeFit(prvViewportRef.current, setPrvStageSize);
+      computeFit(pgmViewportRef.current, setPgmStageSize);
+    };
+
+    updateAll();
+    const ro = new ResizeObserver(updateAll);
+    if (prvViewportRef.current) ro.observe(prvViewportRef.current);
+    if (pgmViewportRef.current) ro.observe(pgmViewportRef.current);
+    window.addEventListener('resize', updateAll);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateAll);
+    };
+  }, [totalCanvasWidth, totalCanvasHeight]);
 
   // Sync Preview Background Blur video with Preview Foreground video
   useEffect(() => {
@@ -245,6 +284,191 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
     };
   };
 
+  // Interactive Mouse Move & 4-Corner Resize Handler for Preview & Program Canvases
+  const startInteractiveTransform = (
+    e: React.MouseEvent,
+    cue: VideoCue | null,
+    stageEl: HTMLDivElement | null,
+    mode: DragMode,
+    targetKey: 'prv' | 'pgm'
+  ) => {
+    if (!cue || !stageEl || !onUpdateCue) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    setActiveGizmoTarget(targetKey);
+    const stageRect = stageEl.getBoundingClientRect();
+    if (stageRect.width < 10 || stageRect.height < 10) return;
+
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+
+    const box = computeVideoBox({
+      scaleMode: cue.scaleMode,
+      aspectRatio: cue.aspectRatio,
+      zoom: cue.zoom ?? 100,
+      scaleX: cue.scaleX ?? 100,
+      scaleY: cue.scaleY ?? 100,
+      offsetX: cue.offsetX ?? 0,
+      offsetY: cue.offsetY ?? 0,
+      canvasWidth: totalCanvasWidth,
+      canvasHeight: totalCanvasHeight,
+      videoWidth: cue.width || 1920,
+      videoHeight: cue.height || 1080,
+    });
+
+    const startOffsetX = cue.offsetX ?? 0;
+    const startOffsetY = cue.offsetY ?? 0;
+    const startLeft = box.leftPct;
+    const startRight = box.leftPct + box.widthPct;
+    const startTop = box.topPct;
+    const startBottom = box.topPct + box.heightPct;
+    const effBaseW = Math.max(1, box.baseWidthPct * ((cue.zoom ?? 100) / 100));
+    const effBaseH = Math.max(1, box.baseHeightPct * ((cue.zoom ?? 100) / 100));
+
+    const onMouseMove = (moveEv: MouseEvent) => {
+      const dxPct = ((moveEv.clientX - startClientX) / stageRect.width) * 100;
+      const dyPct = ((moveEv.clientY - startClientY) / stageRect.height) * 100;
+
+      if (mode === 'move') {
+        let nextOx = Math.round((startOffsetX + dxPct) * 10) / 10;
+        let nextOy = Math.round((startOffsetY + dyPct) * 10) / 10;
+        // Magnetic snap to center (0, 0) when close
+        if (Math.abs(nextOx) < 1.0) nextOx = 0;
+        if (Math.abs(nextOy) < 1.0) nextOy = 0;
+        onUpdateCue(cue.id, {
+          offsetX: Math.max(-100, Math.min(100, nextOx)),
+          offsetY: Math.max(-100, Math.min(100, nextOy)),
+        });
+        return;
+      }
+
+      // 4-Corner independent horizontal & vertical resizing / deformation
+      let newLeft = startLeft;
+      let newRight = startRight;
+      let newTop = startTop;
+      let newBottom = startBottom;
+
+      if (mode === 'nw') {
+        newLeft = Math.min(startRight - 5, startLeft + dxPct);
+        newTop = Math.min(startBottom - 5, startTop + dyPct);
+      } else if (mode === 'ne') {
+        newRight = Math.max(startLeft + 5, startRight + dxPct);
+        newTop = Math.min(startBottom - 5, startTop + dyPct);
+      } else if (mode === 'sw') {
+        newLeft = Math.min(startRight - 5, startLeft + dxPct);
+        newBottom = Math.max(startTop + 5, startBottom + dyPct);
+      } else if (mode === 'se') {
+        newRight = Math.max(startLeft + 5, startRight + dxPct);
+        newBottom = Math.max(startTop + 5, startBottom + dyPct);
+      }
+
+      const newW = Math.max(5, newRight - newLeft);
+      const newH = Math.max(5, newBottom - newTop);
+      const newCenterX = (newLeft + newRight) / 2;
+      const newCenterY = (newTop + newBottom) / 2;
+
+      const nextScaleX = Math.max(10, Math.min(400, Math.round((newW / effBaseW) * 1000) / 10));
+      const nextScaleY = Math.max(10, Math.min(400, Math.round((newH / effBaseH) * 1000) / 10));
+      const nextOffsetX = Math.max(-100, Math.min(100, Math.round((newCenterX - 50) * 10) / 10));
+      const nextOffsetY = Math.max(-100, Math.min(100, Math.round((newCenterY - 50) * 10) / 10));
+
+      onUpdateCue(cue.id, {
+        scaleX: nextScaleX,
+        scaleY: nextScaleY,
+        offsetX: nextOffsetX,
+        offsetY: nextOffsetY,
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const renderInteractiveGizmo = (
+    cue: VideoCue | null,
+    stageRef: React.RefObject<HTMLDivElement>,
+    targetKey: 'prv' | 'pgm'
+  ) => {
+    if (!cue || !onUpdateCue) return null;
+    const box = computeVideoBox({
+      scaleMode: cue.scaleMode,
+      aspectRatio: cue.aspectRatio,
+      zoom: cue.zoom ?? 100,
+      scaleX: cue.scaleX ?? 100,
+      scaleY: cue.scaleY ?? 100,
+      offsetX: cue.offsetX ?? 0,
+      offsetY: cue.offsetY ?? 0,
+      canvasWidth: totalCanvasWidth,
+      canvasHeight: totalCanvasHeight,
+      videoWidth: cue.width || 1920,
+      videoHeight: cue.height || 1080,
+    });
+
+    const isFocused = activeGizmoTarget === targetKey;
+
+    return (
+      <div
+        className={`video-transform-gizmo ${isFocused ? 'focused' : ''}`}
+        style={{
+          left: `${box.leftPct}%`,
+          top: `${box.topPct}%`,
+          width: `${box.widthPct}%`,
+          height: `${box.heightPct}%`,
+        }}
+        onMouseDown={(e) =>
+          startInteractiveTransform(e, cue, stageRef.current, 'move', targetKey)
+        }
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onUpdateCue(cue.id, {
+            scaleX: 100,
+            scaleY: 100,
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 100,
+          });
+        }}
+        title="Arrastra para mover el vídeo • Arrastra las 4 esquinas para ampliar o deformar H/V • Doble clic para centrar al 100%"
+      >
+        {/* 4 Corner Handles */}
+        <div
+          className="gizmo-corner nw"
+          onMouseDown={(e) =>
+            startInteractiveTransform(e, cue, stageRef.current, 'nw', targetKey)
+          }
+        />
+        <div
+          className="gizmo-corner ne"
+          onMouseDown={(e) =>
+            startInteractiveTransform(e, cue, stageRef.current, 'ne', targetKey)
+          }
+        />
+        <div
+          className="gizmo-corner sw"
+          onMouseDown={(e) =>
+            startInteractiveTransform(e, cue, stageRef.current, 'sw', targetKey)
+          }
+        />
+        <div
+          className="gizmo-corner se"
+          onMouseDown={(e) =>
+            startInteractiveTransform(e, cue, stageRef.current, 'se', targetKey)
+          }
+        />
+        <div className="gizmo-hud-badge">
+          {box.pixelWidth}×{box.pixelHeight}px ({Math.round(cue.scaleX ?? 100)}%×
+          {Math.round(cue.scaleY ?? 100)}%)
+        </div>
+      </div>
+    );
+  };
+
   const prvDur = previewCue?.duration || 0;
   const prvIn = previewCue?.inPoint || 0;
   const prvOut = previewCue && previewCue.outPoint > prvIn ? previewCue.outPoint : prvDur;
@@ -257,103 +481,17 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
   const isWarning = pgmPlaying && pgmRemaining <= 15 && pgmRemaining > 5;
   const isCritical = pgmPlaying && pgmRemaining <= 5;
 
-  const renderQuickGeometryBar = (cue: VideoCue | null, labelPrefix: string) => {
-    if (!cue || !onUpdateCue) return null;
-    const zoomVal = cue.zoom ?? 100;
-    const arVal = cue.aspectRatio ?? 'native';
-    const blurOn = !!cue.bgBlurEnabled;
-    const blurAmt = cue.bgBlurAmount ?? 90;
-
-    return (
-      <div className="quick-geometry-bar">
-        <div className="qg-group" title="Modo de ajuste a la pantalla de salida">
-          {(
-            [
-              { id: 'fit', label: 'FIT' },
-              { id: 'fill', label: 'FILL' },
-              { id: 'stretch', label: 'STRETCH' },
-            ] as { id: ScaleMode; label: string }[]
-          ).map((s) => (
-            <button
-              key={s.id}
-              className={`qg-btn ${cue.scaleMode === s.id ? 'active' : ''}`}
-              onClick={() => onUpdateCue(cue.id, { scaleMode: s.id })}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="qg-group" title={`${labelPrefix}: Relación de aspecto (Aspect Ratio)`}>
-          <Maximize2 size={11} className="qg-icon" />
-          <select
-            className="qg-select"
-            value={arVal}
-            onChange={(e) =>
-              onUpdateCue(cue.id, { aspectRatio: e.target.value as AspectRatioMode })
-            }
-          >
-            {ASPECT_RATIO_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                AR: {opt.shortLabel}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="qg-group" title="Ampliar / Zoom de imagen en salida">
-          <button
-            className="qg-btn icon"
-            onClick={() => onUpdateCue(cue.id, { zoom: Math.max(50, zoomVal - 10) })}
-            title="Reducir Zoom (-10%)"
-          >
-            <ZoomOut size={12} />
-          </button>
-          <button
-            className={`qg-btn zoom-readout ${zoomVal !== 100 ? 'active-amber' : ''}`}
-            onClick={() =>
-              onUpdateCue(cue.id, {
-                zoom: 100,
-                scaleX: 100,
-                scaleY: 100,
-                offsetX: 0,
-                offsetY: 0,
-              })
-            }
-            title="Clic para resetear Zoom a 100%"
-          >
-            {zoomVal}%
-          </button>
-          <button
-            className="qg-btn icon"
-            onClick={() => onUpdateCue(cue.id, { zoom: Math.min(300, zoomVal + 10) })}
-            title="Ampliar Zoom (+10%)"
-          >
-            <ZoomIn size={12} />
-          </button>
-        </div>
-
-        <button
-          className={`qg-btn blur-toggle-btn ${blurOn ? 'active-purple' : ''}`}
-          onClick={() =>
-            onUpdateCue(cue.id, {
-              bgBlurEnabled: !blurOn,
-              bgBlurAmount: cue.bgBlurAmount ?? 90,
-              bgBlurBrightness: cue.bgBlurBrightness ?? 75,
-              bgBlurZoom: cue.bgBlurZoom ?? 125,
-            })
-          }
-          title="Activar capa inferior con el vídeo ampliado a pantalla completa y desenfoque Blur al 90% debajo del vídeo original"
-        >
-          <Sparkles size={12} />
-          <span>{blurOn ? `BLUR ${blurAmt}% ON` : 'FONDO BLUR 90%'}</span>
-        </button>
-      </div>
-    );
+  // Master Fader with magnetic snap at 100% (0.0 dB)
+  const handleMasterFaderChange = (rawVal: number) => {
+    const snapped = rawVal >= 96 && rawVal <= 104 ? 100 : rawVal;
+    onChangeMasterVolume(snapped);
   };
 
   return (
-    <div className="dual-monitors-grid">
+    <div
+      className="dual-monitors-grid"
+      onMouseDown={() => setActiveGizmoTarget(null)}
+    >
       {/* ================= LEFT: PREVIEW (PRV) MONITOR ================= */}
       <div className="monitor-card preview-card">
         <div className="monitor-header">
@@ -367,12 +505,12 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <span className="cue-num-pill">#{previewCue.cueNumber}</span>
                 <span className="truncate">{previewCue.name}</span>
                 <span className="codec-tag">
-                  {previewCue.width}x{previewCue.height} • {previewCue.fps}fps •{' '}
-                  {previewCue.videoCodec.toUpperCase()}
+                  {previewCue.width}×{previewCue.height} → Lienzo {totalCanvasWidth}×
+                  {totalCanvasHeight}
                 </span>
               </>
             ) : (
-              <span className="text-muted">Selecciona un Cue para previsualizar</span>
+              <span className="text-muted">Selecciona un vídeo del Cue List</span>
             )}
           </div>
           <div className="monitor-tc-group">
@@ -385,61 +523,77 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           </div>
         </div>
 
-        {/* Preview Video Viewport */}
-        <div className="monitor-viewport prv-viewport">
-          {/* Preview Background Blur Layer */}
-          <video
-            ref={prvBgVideoRef}
-            muted
-            playsInline
+        {/* Preview Video Chamber & Proportional Output Canvas */}
+        <div className="monitor-viewport prv-viewport" ref={prvViewportRef}>
+          <div
+            className="canvas-stage"
+            ref={prvStageRef}
             style={{
-              ...getBackgroundBlurVideoStyle({
-                bgBlurAmount: previewCue?.bgBlurAmount ?? 90,
-                bgBlurBrightness: previewCue?.bgBlurBrightness ?? 75,
-                bgBlurZoom: previewCue?.bgBlurZoom ?? 125,
-                rotation: previewCue?.rotation,
-                flipH: previewCue?.flipH,
-                flipV: previewCue?.flipV,
-              }),
-              display: previewCue && previewCue.bgBlurEnabled ? 'block' : 'none',
+              width: `${prvStageSize.w}px`,
+              height: `${prvStageSize.h}px`,
             }}
-          />
+          >
+            {/* Preview Background Blur Layer */}
+            <video
+              ref={prvBgVideoRef}
+              muted
+              playsInline
+              style={{
+                ...getBackgroundBlurVideoStyle({
+                  bgBlurAmount: previewCue?.bgBlurAmount ?? 90,
+                  bgBlurBrightness: previewCue?.bgBlurBrightness ?? 75,
+                  bgBlurZoom: previewCue?.bgBlurZoom ?? 125,
+                  rotation: previewCue?.rotation,
+                  flipH: previewCue?.flipH,
+                  flipV: previewCue?.flipV,
+                }),
+                display: previewCue && previewCue.bgBlurEnabled ? 'block' : 'none',
+              }}
+            />
 
-          {/* Preview Foreground Video Layer */}
-          <video
-            ref={previewVideoRef}
-            muted={!prvAudition}
-            playsInline
-            style={{
-              ...getForegroundVideoStyle({
-                scaleMode: previewCue?.scaleMode || 'fit',
-                aspectRatio: previewCue?.aspectRatio || 'native',
-                zoom: previewCue?.zoom ?? 100,
-                scaleX: previewCue?.scaleX ?? 100,
-                scaleY: previewCue?.scaleY ?? 100,
-                offsetX: previewCue?.offsetX ?? 0,
-                offsetY: previewCue?.offsetY ?? 0,
-                rotation: previewCue?.rotation || 0,
-                flipH: previewCue?.flipH || false,
-                flipV: previewCue?.flipV || false,
-                canvasWidth: totalCanvasWidth,
-                canvasHeight: totalCanvasHeight,
-              }),
-              display: previewCue ? 'block' : 'none',
-            }}
-          />
-          {!previewCue && (
-            <div className="empty-viewport">
-              <span>SIN SEÑAL EN PREVIEW</span>
-              <small>Doble clic o clic en un clip de la lista inferior</small>
-            </div>
-          )}
-          {previewCue && !previewCue.exists && (
-            <div className="missing-overlay">
-              <span>ARCHIVO NO ENCONTRADO (OFFLINE)</span>
-              <small>{previewCue.filePath}</small>
-            </div>
-          )}
+            {/* Preview Foreground Video Layer */}
+            <video
+              ref={previewVideoRef}
+              muted={!prvAudition}
+              playsInline
+              style={{
+                ...getForegroundVideoStyle({
+                  scaleMode: previewCue?.scaleMode || 'fit',
+                  aspectRatio: previewCue?.aspectRatio || 'native',
+                  zoom: previewCue?.zoom ?? 100,
+                  scaleX: previewCue?.scaleX ?? 100,
+                  scaleY: previewCue?.scaleY ?? 100,
+                  offsetX: previewCue?.offsetX ?? 0,
+                  offsetY: previewCue?.offsetY ?? 0,
+                  rotation: previewCue?.rotation || 0,
+                  flipH: previewCue?.flipH || false,
+                  flipV: previewCue?.flipV || false,
+                  canvasWidth: totalCanvasWidth,
+                  canvasHeight: totalCanvasHeight,
+                  videoWidth: previewCue?.width || 1920,
+                  videoHeight: previewCue?.height || 1080,
+                }),
+                display: previewCue ? 'block' : 'none',
+              }}
+            />
+
+            {/* Interactive Mouse Move & 4-Corner Resize Gizmo */}
+            {renderInteractiveGizmo(previewCue, prvStageRef, 'prv')}
+
+            {!previewCue && (
+              <div className="empty-viewport">
+                <span>SIN SEÑAL EN PREVIEW</span>
+                <small>Lienzo {totalCanvasWidth}×{totalCanvasHeight} px</small>
+              </div>
+            )}
+            {previewCue && !previewCue.exists && (
+              <div className="missing-overlay">
+                <span>ARCHIVO NO ENCONTRADO (OFFLINE)</span>
+                <small>{previewCue.filePath}</small>
+              </div>
+            )}
+          </div>
+
           <div className="viewport-overlay-tc left">
             ELAPSED {formatTimecode(prvTime, previewCue?.fps || 25)}
           </div>
@@ -447,9 +601,6 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             OUT {formatTimecode(prvOut, previewCue?.fps || 25)}
           </div>
         </div>
-
-        {/* Quick Geometry & Background Blur Bar for Preview */}
-        {renderQuickGeometryBar(previewCue, 'PRV')}
 
         {/* Preview Timeline with In/Out Trim Bar */}
         <div className="timeline-container">
@@ -497,7 +648,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               disabled={!previewCue}
               title="Reproducir / Pausar Preview"
             >
-              {prvPlaying ? <Pause size={15} /> : <Play size={15} />}
+              {prvPlaying ? <Pause size={14} /> : <Play size={14} />}
               <span>{prvPlaying ? 'PAUSA' : 'PLAY'}</span>
             </button>
             <button
@@ -506,7 +657,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               disabled={!previewCue}
               title="Fotograma anterior (-1f)"
             >
-              <StepBack size={14} />
+              <StepBack size={13} />
             </button>
             <button
               className="ctrl-btn icon-only"
@@ -514,7 +665,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               disabled={!previewCue}
               title="Fotograma siguiente (+1f)"
             >
-              <StepForward size={14} />
+              <StepForward size={13} />
             </button>
           </div>
 
@@ -525,7 +676,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               disabled={!previewCue}
               title="Marcar Punto IN en posición actual (Tecla I)"
             >
-              <Scissors size={13} />
+              <Scissors size={12} />
               <span>[ IN</span>
             </button>
             <button
@@ -561,7 +712,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               disabled={!previewCue}
               title="Escuchar audio de Preview (Audition)"
             >
-              {prvAudition ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              {prvAudition ? <Volume2 size={13} /> : <VolumeX size={13} />}
               <span>AUD</span>
             </button>
           </div>
@@ -576,7 +727,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           disabled={!previewCue && !programCue}
           title="Lanzar Preview a Program con transición (ENTER / F1)"
         >
-          <ArrowRightLeft size={20} />
+          <ArrowRightLeft size={18} />
           <span className="take-title">TAKE</span>
           <span className="take-sub">
             {transitionType.toUpperCase()} ({transitionDuration.toFixed(1)}s)
@@ -589,7 +740,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           disabled={!previewCue}
           title="Corte directo instantáneo a Program (F2)"
         >
-          <Zap size={15} />
+          <Zap size={14} />
           <span>CUT DIRECTO</span>
         </button>
 
@@ -643,7 +794,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             onClick={onToggleBlackout}
             title="Blackout / Fade to Black en salida (Tecla B)"
           >
-            <EyeOff size={15} />
+            <EyeOff size={14} />
             <span>BLACKOUT</span>
           </button>
 
@@ -652,16 +803,16 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             onClick={onToggleFreeze}
             title="Congelar imagen de salida (Tecla F)"
           >
-            <Snowflake size={15} />
+            <Snowflake size={14} />
             <span>FREEZE</span>
           </button>
 
           <button
             className={`override-btn pattern-btn ${isTestPattern ? 'active' : ''}`}
             onClick={onToggleTestPattern}
-            title="Enviar Carta de Ajuste SMPTE 1080p a Salida"
+            title="Enviar Carta de Ajuste SMPTE a Salida"
           >
-            <Tv size={15} />
+            <Tv size={14} />
             <span>CARTA AJUSTE</span>
           </button>
         </div>
@@ -692,7 +843,9 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                   </span>
                 </>
               ) : (
-                <span className="text-muted">Sin clip en aire</span>
+                <span className="text-muted">
+                  Salida {totalCanvasWidth}×{totalCanvasHeight} px
+                </span>
               )}
             </div>
             <div className="monitor-tc-group">
@@ -706,129 +859,146 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             </div>
           </div>
 
-          {/* Program Dual-Deck Viewport */}
-          <div className="monitor-viewport pgm-viewport">
-            {/* DECK A */}
-            <div style={getDeckWrapperStyle(deckA, 'A')}>
-              <video
-                ref={pgmBgVideoARef}
-                muted
-                playsInline
-                style={{
-                  ...getBackgroundBlurVideoStyle({
-                    bgBlurAmount: deckA.bgBlurAmount,
-                    bgBlurBrightness: deckA.bgBlurBrightness,
-                    bgBlurZoom: deckA.bgBlurZoom,
+          {/* Program Dual-Deck Chamber & Proportional Output Canvas */}
+          <div className="monitor-viewport pgm-viewport" ref={pgmViewportRef}>
+            <div
+              className="canvas-stage"
+              ref={pgmStageRef}
+              style={{
+                width: `${pgmStageSize.w}px`,
+                height: `${pgmStageSize.h}px`,
+              }}
+            >
+              {/* DECK A */}
+              <div style={getDeckWrapperStyle(deckA, 'A')}>
+                <video
+                  ref={pgmBgVideoARef}
+                  muted
+                  playsInline
+                  style={{
+                    ...getBackgroundBlurVideoStyle({
+                      bgBlurAmount: deckA.bgBlurAmount,
+                      bgBlurBrightness: deckA.bgBlurBrightness,
+                      bgBlurZoom: deckA.bgBlurZoom,
+                      rotation: deckA.rotation,
+                      flipH: deckA.flipH,
+                      flipV: deckA.flipV,
+                    }),
+                    display: deckA.bgBlurEnabled && deckA.mediaUrl ? 'block' : 'none',
+                  }}
+                />
+                <video
+                  ref={pgmVideoARef}
+                  playsInline
+                  crossOrigin="anonymous"
+                  style={getForegroundVideoStyle({
+                    scaleMode: deckA.scaleMode,
+                    aspectRatio: deckA.aspectRatio,
+                    zoom: deckA.zoom,
+                    scaleX: deckA.scaleX,
+                    scaleY: deckA.scaleY,
+                    offsetX: deckA.offsetX,
+                    offsetY: deckA.offsetY,
                     rotation: deckA.rotation,
                     flipH: deckA.flipH,
                     flipV: deckA.flipV,
-                  }),
-                  display: deckA.bgBlurEnabled && deckA.mediaUrl ? 'block' : 'none',
-                }}
-              />
-              <video
-                ref={pgmVideoARef}
-                playsInline
-                crossOrigin="anonymous"
-                style={getForegroundVideoStyle({
-                  scaleMode: deckA.scaleMode,
-                  aspectRatio: deckA.aspectRatio,
-                  zoom: deckA.zoom,
-                  scaleX: deckA.scaleX,
-                  scaleY: deckA.scaleY,
-                  offsetX: deckA.offsetX,
-                  offsetY: deckA.offsetY,
-                  rotation: deckA.rotation,
-                  flipH: deckA.flipH,
-                  flipV: deckA.flipV,
-                  canvasWidth: totalCanvasWidth,
-                  canvasHeight: totalCanvasHeight,
-                })}
-              />
-            </div>
+                    canvasWidth: totalCanvasWidth,
+                    canvasHeight: totalCanvasHeight,
+                    videoWidth: deckA.videoWidth || 1920,
+                    videoHeight: deckA.videoHeight || 1080,
+                  })}
+                />
+              </div>
 
-            {/* DECK B */}
-            <div style={getDeckWrapperStyle(deckB, 'B')}>
-              <video
-                ref={pgmBgVideoBRef}
-                muted
-                playsInline
-                style={{
-                  ...getBackgroundBlurVideoStyle({
-                    bgBlurAmount: deckB.bgBlurAmount,
-                    bgBlurBrightness: deckB.bgBlurBrightness,
-                    bgBlurZoom: deckB.bgBlurZoom,
+              {/* DECK B */}
+              <div style={getDeckWrapperStyle(deckB, 'B')}>
+                <video
+                  ref={pgmBgVideoBRef}
+                  muted
+                  playsInline
+                  style={{
+                    ...getBackgroundBlurVideoStyle({
+                      bgBlurAmount: deckB.bgBlurAmount,
+                      bgBlurBrightness: deckB.bgBlurBrightness,
+                      bgBlurZoom: deckB.bgBlurZoom,
+                      rotation: deckB.rotation,
+                      flipH: deckB.flipH,
+                      flipV: deckB.flipV,
+                    }),
+                    display: deckB.bgBlurEnabled && deckB.mediaUrl ? 'block' : 'none',
+                  }}
+                />
+                <video
+                  ref={pgmVideoBRef}
+                  playsInline
+                  crossOrigin="anonymous"
+                  style={getForegroundVideoStyle({
+                    scaleMode: deckB.scaleMode,
+                    aspectRatio: deckB.aspectRatio,
+                    zoom: deckB.zoom,
+                    scaleX: deckB.scaleX,
+                    scaleY: deckB.scaleY,
+                    offsetX: deckB.offsetX,
+                    offsetY: deckB.offsetY,
                     rotation: deckB.rotation,
                     flipH: deckB.flipH,
                     flipV: deckB.flipV,
-                  }),
-                  display: deckB.bgBlurEnabled && deckB.mediaUrl ? 'block' : 'none',
-                }}
-              />
-              <video
-                ref={pgmVideoBRef}
-                playsInline
-                crossOrigin="anonymous"
-                style={getForegroundVideoStyle({
-                  scaleMode: deckB.scaleMode,
-                  aspectRatio: deckB.aspectRatio,
-                  zoom: deckB.zoom,
-                  scaleX: deckB.scaleX,
-                  scaleY: deckB.scaleY,
-                  offsetX: deckB.offsetX,
-                  offsetY: deckB.offsetY,
-                  rotation: deckB.rotation,
-                  flipH: deckB.flipH,
-                  flipV: deckB.flipV,
-                  canvasWidth: totalCanvasWidth,
-                  canvasHeight: totalCanvasHeight,
-                })}
-              />
-            </div>
-
-            {isTestPattern && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-                <TestPatternCanvas
-                  canvasWidth={totalCanvasWidth}
-                  canvasHeight={totalCanvasHeight}
-                  mosaicMode={mosaicConfig?.mode || 'single'}
+                    canvasWidth: totalCanvasWidth,
+                    canvasHeight: totalCanvasHeight,
+                    videoWidth: deckB.videoWidth || 1920,
+                    videoHeight: deckB.videoHeight || 1080,
+                  })}
                 />
               </div>
-            )}
 
-            {/* Mosaic Seam Guide in Operator Program Monitor */}
-            {mosaicConfig &&
-              mosaicConfig.showSeamGuideInPreview &&
-              (mosaicConfig.mode === 'horizontal_2x1' || mosaicConfig.mode === 'vertical_1x2') && (
-                <div
-                  className={`pgm-mosaic-seam-guide ${
-                    mosaicConfig.mode === 'horizontal_2x1' ? 'horiz' : 'vert'
-                  }`}
-                >
-                  <span className="seam-tag out1">OUT 1</span>
-                  <span className="seam-tag out2">OUT 2</span>
+              {/* Interactive Mouse Move & 4-Corner Resize Gizmo on Program */}
+              {!isTestPattern && renderInteractiveGizmo(programCue, pgmStageRef, 'pgm')}
+
+              {isTestPattern && (
+                <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                  <TestPatternCanvas
+                    canvasWidth={totalCanvasWidth}
+                    canvasHeight={totalCanvasHeight}
+                    mosaicMode={mosaicConfig?.mode || 'single'}
+                  />
                 </div>
               )}
 
-            {isBlackout && (
-              <div className="blackout-viewport-banner">
-                <span>BLACKOUT ACTIVO (SALIDA EN NEGRO)</span>
-              </div>
-            )}
+              {/* Mosaic Seam Guide in Operator Program Monitor */}
+              {mosaicConfig &&
+                mosaicConfig.showSeamGuideInPreview &&
+                (mosaicConfig.mode === 'horizontal_2x1' ||
+                  mosaicConfig.mode === 'vertical_1x2') && (
+                  <div
+                    className={`pgm-mosaic-seam-guide ${
+                      mosaicConfig.mode === 'horizontal_2x1' ? 'horiz' : 'vert'
+                    }`}
+                  >
+                    <span className="seam-tag out1">OUT 1</span>
+                    <span className="seam-tag out2">OUT 2</span>
+                  </div>
+                )}
 
-            {isFrozen && !isBlackout && (
-              <div className="freeze-viewport-banner">
-                <Snowflake size={14} />
-                <span>SALIDA CONGELADA (FREEZE)</span>
-              </div>
-            )}
+              {isBlackout && (
+                <div className="blackout-viewport-banner">
+                  <span>BLACKOUT ACTIVO (SALIDA EN NEGRO)</span>
+                </div>
+              )}
 
-            {!programCue && !isTestPattern && (
-              <div className="empty-viewport">
-                <span>PROGRAM EN NEGRO</span>
-                <small>Pulsa TAKE o barra espaciadora para lanzar vídeo</small>
-              </div>
-            )}
+              {isFrozen && !isBlackout && (
+                <div className="freeze-viewport-banner">
+                  <Snowflake size={13} />
+                  <span>SALIDA CONGELADA (FREEZE)</span>
+                </div>
+              )}
+
+              {!programCue && !isTestPattern && (
+                <div className="empty-viewport">
+                  <span>PROGRAM EN NEGRO</span>
+                  <small>Lienzo {totalCanvasWidth}×{totalCanvasHeight} px</small>
+                </div>
+              )}
+            </div>
 
             <div className="viewport-overlay-tc left">
               ELAPSED {formatTimecode(pgmTime, programCue?.fps || 25)}
@@ -838,9 +1008,6 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               {formatTimecode(pgmOut, programCue?.fps || 25)}
             </div>
           </div>
-
-          {/* Quick Geometry & Background Blur Bar for Live Program */}
-          {renderQuickGeometryBar(programCue, 'PGM')}
 
           {/* Program Timeline Scrubber */}
           <div className="timeline-container">
@@ -888,7 +1055,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 disabled={!programCue}
                 title="Play / Pausa Program (ESPACIO)"
               >
-                {pgmPlaying ? <Pause size={15} /> : <Play size={15} />}
+                {pgmPlaying ? <Pause size={14} /> : <Play size={14} />}
                 <span>{pgmPlaying ? 'PAUSAR PGM' : 'PLAY PGM'}</span>
               </button>
               <button
@@ -897,12 +1064,12 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 disabled={!programCue}
                 title="Volver al punto IN del clip en aire (Tecla R)"
               >
-                <RotateCcw size={14} />
+                <RotateCcw size={13} />
                 <span>INICIO</span>
               </button>
             </div>
 
-            {/* Mitti / PlaybackPro+ Signature Goto -10s / -20s / -30s */}
+            {/* Goto -10s / -20s / -30s */}
             <div className="btn-group">
               <button
                 className="ctrl-btn goto-end-btn"
@@ -910,7 +1077,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 disabled={!programCue}
                 title="Saltar a 30 segundos antes del punto OUT"
               >
-                <FastForward size={13} />
+                <FastForward size={12} />
                 <span>-30s</span>
               </button>
               <button
@@ -955,7 +1122,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 disabled={!programCue}
                 title="Al terminar: Bucle infinito (Tecla L)"
               >
-                <Repeat size={13} />
+                <Repeat size={12} />
                 <span>LOOP</span>
               </button>
               <button
@@ -964,16 +1131,16 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 disabled={!programCue}
                 title="Al terminar: Lanzar siguiente vídeo automáticamente"
               >
-                <SkipForward size={13} />
+                <SkipForward size={12} />
                 <span>NEXT</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* ================= STEREO VU METER & MASTER AUDIO RACK ================= */}
+        {/* ================= STEREO VU METER & MASTER AUDIO RACK (WITH SNAP AT 0 dB) ================= */}
         <div className="audio-master-rack">
-          <div className="rack-title">PGM AUDIO</div>
+          <div className="rack-title">MASTER</div>
           <div className="vu-meters-body">
             {/* Left Channel Bar */}
             <div className="vu-channel">
@@ -992,10 +1159,10 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
             {/* dB Scale */}
             <div className="vu-scale">
-              <span>0</span>
+              <span>+2</span>
+              <span className="zero-db-mark">0</span>
               <span>-6</span>
-              <span>-12</span>
-              <span>-24</span>
+              <span>-18</span>
               <span>-48</span>
             </div>
 
@@ -1014,19 +1181,29 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               <span className="vu-label">R</span>
             </div>
 
-            {/* Master Fader */}
+            {/* Master Fader with 0 dB (100%) Snap */}
             <div className="master-fader-col">
-              <input
-                type="range"
-                className="vertical-fader"
-                min={0}
-                max={125}
-                step={1}
-                value={isMasterMuted ? 0 : masterVolume}
-                onChange={(e) => onChangeMasterVolume(parseInt(e.target.value, 10))}
-                title={`Volumen Master: ${masterVolume}%`}
-              />
-              <span className="fader-val">{isMasterMuted ? 'MUTE' : `${masterVolume}%`}</span>
+              <div className="fader-track-wrap">
+                <div className="fader-zero-tick" title="0.0 dB (100%)" />
+                <input
+                  type="range"
+                  className="vertical-fader"
+                  min={0}
+                  max={125}
+                  step={1}
+                  value={isMasterMuted ? 0 : masterVolume}
+                  onChange={(e) => handleMasterFaderChange(parseInt(e.target.value, 10))}
+                  onDoubleClick={() => onChangeMasterVolume(100)}
+                  title={`Master: ${gainToDbString(masterVolume, isMasterMuted)} (Doble clic para 0.0 dB)`}
+                />
+              </div>
+              <span
+                className={`fader-val ${masterVolume === 100 && !isMasterMuted ? 'is-zero' : ''}`}
+                onClick={() => onChangeMasterVolume(100)}
+                title="Clic para fijar a 0.0 dB"
+              >
+                {isMasterMuted ? 'MUTE' : gainToDbString(masterVolume, false)}
+              </span>
             </div>
           </div>
 
@@ -1035,8 +1212,8 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             onClick={onToggleMasterMute}
             title="Silenciar Salida Master (Tecla M)"
           >
-            {isMasterMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            <span>{isMasterMuted ? 'MUTED' : 'MASTER'}</span>
+            {isMasterMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            <span>{isMasterMuted ? 'MUTED' : 'MUTE'}</span>
           </button>
         </div>
       </div>

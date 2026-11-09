@@ -19,6 +19,12 @@ export type CueColor = 'none' | 'red' | 'amber' | 'emerald' | 'blue' | 'purple' 
 
 export type MosaicMode = 'single' | 'horizontal_2x1' | 'vertical_1x2' | 'mirror_2x';
 
+export interface ConvertVideoOptions {
+  targetCodec?: 'h264' | 'h264_intra' | 'hevc' | 'prores';
+  quality?: 'high' | 'medium' | 'light';
+  resolution?: 'original' | '1080p' | '720p';
+}
+
 export interface MosaicSliceViewport {
   mode: MosaicMode;
   role: 'full' | 'slot1' | 'slot2';
@@ -67,11 +73,11 @@ export interface VideoCue {
   // Video & Geometry settings
   scaleMode: ScaleMode;
   aspectRatio?: AspectRatioMode; // 'native' | 'output' | '16:9' | '4:3' etc.
-  zoom?: number; // 50 to 300 (%) — default 100
-  scaleX?: number; // 50 to 200 (%) — default 100
-  scaleY?: number; // 50 to 200 (%) — default 100
-  offsetX?: number; // -50 to +50 (%) — default 0
-  offsetY?: number; // -50 to +50 (%) — default 0
+  zoom?: number; // 20 to 300 (%) — default 100
+  scaleX?: number; // 10 to 300 (%) — default 100
+  scaleY?: number; // 10 to 300 (%) — default 100
+  offsetX?: number; // -100 to +100 (%) — default 0
+  offsetY?: number; // -100 to +100 (%) — default 0
   // Background Blur Fill Layer (for videos that don't fill the screen)
   bgBlurEnabled?: boolean;
   bgBlurAmount?: number; // 0 to 100 (%) — default 90
@@ -89,6 +95,9 @@ export interface VideoCue {
   height: number;
   fps: number;
   videoCodec: string;
+  videoProfile?: string;
+  pixelFormat?: string;
+  bitrateKbps?: number;
   audioCodec: string;
   audioChannels: number;
   audioSampleRate: number;
@@ -129,6 +138,8 @@ export interface DeckSyncPayload {
   scaleY: number;
   offsetX: number;
   offsetY: number;
+  videoWidth?: number;
+  videoHeight?: number;
   bgBlurEnabled: boolean;
   bgBlurAmount: number;
   bgBlurBrightness: number;
@@ -207,14 +218,19 @@ declare global {
       getRemoteInfo: () => Promise<{ oscPort: number; httpPort: number; ips: string[] }>;
       installCompanionModule: () => Promise<{ ok: boolean; targetDir?: string; error?: string }>;
       selectVideoFiles: () => Promise<string[]>;
+      selectVideoFolder: () => Promise<string[]>;
+      expandDroppedPaths: (paths: string[]) => Promise<string[]>;
+      locateFileInFolder: (filePath: string) => Promise<boolean>;
       relinkVideoFile: (oldName: string) => Promise<string | null>;
       probeMedia: (filePath: string) => Promise<any>;
       transcodeProxy: (payload: {
         cueId: string;
         filePath: string;
         duration: number;
+        options?: ConvertVideoOptions;
       }) => Promise<string>;
       generateDemoClips: () => Promise<any[]>;
+      getFirstRunDemoClips: () => Promise<any[]>;
       saveShowFile: (json: string, defaultName: string) => Promise<string | null>;
       openShowFile: () => Promise<{ filePath: string; content: string } | null>;
       autosaveShow: (json: string) => Promise<boolean>;

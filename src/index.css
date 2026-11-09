@@ -352,19 +352,33 @@ textarea {
   background: #991b1b;
 }
 
-/* ================= UPPER SECTION: DUAL MONITORS ================= */
+/* ================= WORKSPACE BODY & UPPER SECTION: DUAL MONITORS ================= */
+.workspace-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .upper-monitors-section {
-  height: 45%;
-  min-height: 315px;
-  max-height: 430px;
-  padding: 8px 10px 4px 10px;
+  min-height: 210px;
+  max-height: 75%;
+  padding: 6px 10px 2px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dual-monitors-grid {
   display: grid;
-  grid-template-columns: 1fr 142px 1.13fr;
+  grid-template-columns: minmax(0, 1fr) 136px minmax(0, 1.12fr);
   gap: 8px;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
 }
 
 .monitor-card {
@@ -1087,14 +1101,33 @@ textarea {
 /* ================= LOWER SECTION: CUE LIST + INSPECTOR ================= */
 .lower-workspace-section {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 330px;
-  gap: 8px;
-  padding: 4px 10px 10px 10px;
+  min-height: 160px;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  padding: 2px 10px 10px 10px;
   overflow: hidden;
 }
 
+.cuelist-container-flex {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-container-fixed {
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .cuelist-panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -2414,5 +2447,445 @@ textarea {
   padding-top: 6px;
   border-top: 1px dashed rgba(168, 85, 247, 0.3);
 }
+
+/* ================= v1.4.0 MACOS SPLITTERS, CANVAS STAGE & GIZMO ================= */
+.inspector-panel {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.resizer-horizontal {
+  height: 8px;
+  min-height: 8px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  z-index: 25;
+  transition: background 0.15s;
+}
+
+.resizer-horizontal:hover {
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.resizer-grip-pill {
+  width: 44px;
+  height: 3px;
+  border-radius: 3px;
+  background: #334155;
+  transition: background 0.15s, width 0.15s;
+}
+
+.resizer-horizontal:hover .resizer-grip-pill {
+  background: #38bdf8;
+  width: 64px;
+}
+
+.resizer-vertical {
+  width: 8px;
+  min-width: 8px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  z-index: 25;
+  transition: background 0.15s;
+}
+
+.resizer-vertical:hover {
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.resizer-grip-pill-v {
+  width: 3px;
+  height: 44px;
+  border-radius: 3px;
+  background: #334155;
+  transition: background 0.15s, height 0.15s;
+}
+
+.resizer-vertical:hover .resizer-grip-pill-v {
+  background: #38bdf8;
+  height: 64px;
+}
+
+/* Proportional Monitor Canvas Stage */
+.canvas-stage {
+  background: #000000;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25), 0 8px 24px rgba(0, 0, 0, 0.75);
+  border-radius: 2px;
+  user-select: none;
+}
+
+.canvas-res-pill {
+  background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #7dd3fc;
+  font-family: 'Consolas', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Interactive Video Transform Gizmo & 4 Corners */
+.video-transform-gizmo {
+  position: absolute;
+  z-index: 11;
+  border: 1.5px solid rgba(56, 189, 248, 0.5);
+  cursor: move;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.video-transform-gizmo:hover,
+.video-transform-gizmo.active {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), inset 0 0 12px rgba(56, 189, 248, 0.12);
+}
+
+.video-transform-gizmo.pgm-gizmo {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.video-transform-gizmo.pgm-gizmo:hover,
+.video-transform-gizmo.pgm-gizmo.active {
+  border-color: #f87171;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.35), inset 0 0 12px rgba(248, 113, 113, 0.12);
+}
+
+.gizmo-corner {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  background: #0b0f17;
+  border: 2px solid #38bdf8;
+  border-radius: 2px;
+  z-index: 14;
+  transition: transform 0.1s, background 0.1s;
+}
+
+.video-transform-gizmo.pgm-gizmo .gizmo-corner {
+  border-color: #f87171;
+}
+
+.gizmo-corner:hover {
+  background: #38bdf8;
+  transform: scale(1.25);
+}
+
+.video-transform-gizmo.pgm-gizmo .gizmo-corner:hover {
+  background: #f87171;
+}
+
+.gizmo-corner.nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.gizmo-corner.ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.gizmo-corner.sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.gizmo-corner.se {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
+}
+
+.gizmo-hud-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(7, 9, 13, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #e0f2fe;
+  font-family: 'Consolas', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.video-transform-gizmo:hover .gizmo-hud-badge,
+.video-transform-gizmo.active .gizmo-hud-badge {
+  opacity: 1;
+}
+
+.gizmo-reset-mini {
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid #38bdf8;
+  color: #fff;
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* Numeric Window Geometry Panel in Video Tab */
+.numeric-geometry-panel {
+  background: #070a10;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.num-grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.num-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.num-field span {
+  font-size: 9.5px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.pixel-readout-bar {
+  background: #0d131f;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'Consolas', monospace;
+  font-size: 10px;
+  color: #7dd3fc;
+  text-align: center;
+}
+
+/* 0.0 dB Magnetic Snap Indicators */
+.fader-with-snap-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fader-zero-tick {
+  position: absolute;
+  right: -13px;
+  top: 20%;
+  font-family: 'Consolas', monospace;
+  font-size: 8px;
+  font-weight: 800;
+  color: #10b981;
+  pointer-events: none;
+}
+
+.fader-val.is-zero {
+  color: #10b981;
+}
+
+.slider-snap-container {
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.horizontal-zero-tick {
+  position: absolute;
+  bottom: -2px;
+  transform: translateX(-50%);
+  font-family: 'Consolas', monospace;
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #10b981;
+  pointer-events: none;
+}
+
+/* macOS Dropdown Menu & Context Menu */
+.add-videos-dropdown-wrap {
+  position: relative;
+}
+
+.macos-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  width: 245px;
+  background: rgba(15, 21, 32, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.75);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+
+.macos-dropdown-item {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.macos-dropdown-item:hover {
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.dropdown-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dropdown-item-text strong {
+  font-size: 11.5px;
+  color: #f8fafc;
+}
+
+.dropdown-item-text span {
+  font-size: 9.5px;
+  color: #94a3b8;
+}
+
+.macos-dropdown-divider {
+  height: 1px;
+  background: #1e293b;
+  margin: 4px 2px;
+}
+
+.context-menu-popup {
+  position: fixed;
+  width: 210px;
+  background: rgba(15, 21, 32, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.85);
+  z-index: 6000;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.context-menu-item.danger {
+  color: #fca5a5;
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ffffff;
+}
+
+/* Delete Confirmation Modal */
+.confirm-modal-card {
+  width: 390px;
+  max-width: 92vw;
+  background: #0f1520;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirm-modal-card h4 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.confirm-modal-card p {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.inspector-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.inspector-action-btn:hover {
+  background: #283548;
+}
+
+.inspector-action-btn.danger-fill {
+  background: #dc2626;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.inspector-action-btn.danger-fill:hover {
+  background: #b91c1c;
+}
+
 
 

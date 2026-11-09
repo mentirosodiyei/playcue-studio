@@ -234,8 +234,9 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       { variableId: 'pgm_number', name: 'Cue # en Programa (PGM)' },
       { variableId: 'pgm_name', name: 'Nombre del Clip en Programa (PGM)' },
       { variableId: 'pgm_state', name: 'Estado de Programa (PLAY / PAUSE)' },
-      { variableId: 'pgm_elapsed', name: 'Tiempo Transcurrido PGM (MM:SS)' },
-      { variableId: 'pgm_remaining', name: 'Tiempo Restante PGM (-MM:SS)' },
+      { variableId: 'pgm_elapsed', name: 'Tiempo Transcurrido del Vídeo PGM (MM:SS)' },
+      { variableId: 'pgm_remaining', name: 'Tiempo Restante REMAINING PGM (-MM:SS)' },
+      { variableId: 'pgm_duration', name: 'Duración Total del Vídeo en PGM (MM:SS)' },
       { variableId: 'pgm_end_action', name: 'Acción Final activa en PGM' },
       { variableId: 'prv_number', name: 'Cue # en Previo (PRV)' },
       { variableId: 'prv_name', name: 'Nombre del Clip en Previo (PRV)' },
@@ -264,6 +265,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       pgm_state: s.isPlaying ? 'ON AIR' : 'PAUSE',
       pgm_elapsed: formatShortTc(s.elapsed),
       pgm_remaining: `-${formatShortTc(s.remaining)}`,
+      pgm_duration: formatShortTc(s.duration),
       pgm_end_action: (s.programEndAction || 'hold').toUpperCase(),
       prv_number: s.previewCueNumber || '-',
       prv_name: (s.previewCueName || 'SIN CLIP').slice(0, 18),
@@ -792,12 +794,26 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       ],
     };
 
+    presets['master_video_time'] = {
+      type: 'button',
+      category: '1. TAKE y Transporte Master',
+      name: 'Reloj Tiempo del Vídeo (Transcurrido / Duración Total)',
+      style: {
+        text: 'TIEMPO VÍDEO\n$(cuepro:pgm_elapsed)\n/ $(cuepro:pgm_duration)',
+        size: '14',
+        color: combineRgb(56, 189, 248),
+        bgcolor: combineRgb(7, 9, 13),
+      },
+      steps: [{ down: [], up: [] }],
+      feedbacks: [],
+    };
+
     presets['master_countdown'] = {
       type: 'button',
       category: '1. TAKE y Transporte Master',
-      name: 'Reloj Cuenta Atrás Dinámico (Verde / Ámbar <15s / Rojo <5s)',
+      name: 'Reloj REMAINING / Tiempo Restante (Verde / Ámbar <15s / Rojo <5s)',
       style: {
-        text: 'RESTANTE\n$(cuepro:pgm_remaining)',
+        text: 'REMAINING\n$(cuepro:pgm_remaining)\nCUE $(cuepro:pgm_number)',
         size: '14',
         color: combineRgb(52, 211, 153),
         bgcolor: combineRgb(7, 9, 13),

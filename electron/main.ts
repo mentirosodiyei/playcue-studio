@@ -5,6 +5,7 @@ import {
   dialog,
   screen,
   protocol,
+  shell,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
@@ -13,6 +14,8 @@ import {
   probeMediaFile,
   transcodeToPlayableMp4,
   generateDemoClips,
+  expandPathsToVideoFiles,
+  ConvertVideoOptions,
 } from './mediaTools';
 import { RemoteControlServer, LiveShowTelemetry } from './osc';
 
@@ -36,8 +39,8 @@ let outputWindows: BrowserWindow[] = [];
 let currentOutputDisplayId: number | null = null;
 let currentMosaicMode: string = 'single';
 let currentIsSpanned = false;
-let currentTotalWidth = 1920;
-let currentTotalHeight = 1080;
+let currentTotalWidth = 2560;
+let currentTotalHeight = 1440;
 let lastOutputState: any = null;
 let remoteServer: RemoteControlServer | null = null;
 
@@ -126,12 +129,12 @@ function broadcastDisplays() {
 function createMainWindow() {
   const iconPath = path.join(__dirname, '../build/icon.ico');
   mainWindow = new BrowserWindow({
-    width: 1560,
-    height: 950,
-    minWidth: 1180,
-    minHeight: 740,
-    backgroundColor: '#07090d',
-    title: 'CuePro Studio v1.3.0 — Broadcast Video Playback & Multi-Output Mosaic',
+    width: 1540,
+    height: 920,
+    minWidth: 1024,
+    minHeight: 640,
+    backgroundColor: '#0a0c10',
+    title: 'CuePro Studio',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
@@ -170,21 +173,24 @@ function spawnSingleOutputBrowserWindow(
   useFullscreen: boolean,
   viewportPayload: any
 ): BrowserWindow {
+  const isBorderlessOrFull = useBorderlessSpan || useFullscreen;
+
   const win = new BrowserWindow({
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    frame: !useBorderlessSpan && !useFullscreen,
-    fullscreen: useFullscreen && !useBorderlessSpan,
+    frame: !isBorderlessOrFull,
+    thickFrame: !isBorderlessOrFull,
+    fullscreen: false, // Set after moving to target display bounds so Windows targets the right monitor
     enableLargerThanScreen: true,
-    resizable: !useBorderlessSpan && !useFullscreen,
-    movable: !useBorderlessSpan && !useFullscreen,
+    resizable: !isBorderlessOrFull,
+    movable: !isBorderlessOrFull,
     backgroundColor: '#000000',
-    title: `CuePro Studio — ${viewportPayload.label || 'OUTPUT'}`,
+    title: `CuePro Output — ${viewportPayload.label || 'OUTPUT'}`,
     autoHideMenuBar: true,
-    alwaysOnTop: true,
-    skipTaskbar: useBorderlessSpan || useFullscreen,
+    alwaysOnTop: isBorderlessOrFull,
+    skipTaskbar: isBorderlessOrFull,
     hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -194,12 +200,15 @@ function spawnSingleOutputBrowserWindow(
     },
   });
 
-  if (useBorderlessSpan || useFullscreen) {
-    win.setAlwaysOnTop(true, 'screen-saver');
-    // Enforce exact bounds after creation for spanned multi-monitor windows on Windows
+  if (isBorderlessOrFull) {
+    // Move to exact display coordinates first
     win.setBounds(bounds);
     if (useFullscreen && !useBorderlessSpan) {
       win.setFullScreen(true);
+    }
+    win.setAlwaysOnTop(true, 'screen-saver');
+    if (useBorderlessSpan) {
+      win.setBounds(bounds);
     }
   }
 
@@ -213,8 +222,17 @@ function spawnSingleOutputBrowserWindow(
   win.loadURL(getAppUrl(`output?viewport=${encodedViewport}`));
 
   win.webContents.on('did-finish-load', () => {
-    if (lastOutputState && !win.isDestroyed()) {
-      win.webContents.send('output-state', lastOutputState);
+    if (!win.isDestroyed()) {
+      if (isBorderlessOrFull) {
+        if (useFullscreen && !useBorderlessSpan) {
+          win.setFullScreen(true);
+        } else {
+          win.setBounds(bounds);
+        }
+      }
+      if (lastOutputState) {
+        win.webContents.send('output-state', lastOutputState);
+      }
     }
   });
 
@@ -247,8 +265,9 @@ function openOutputWindows(
 
   // 1. SINGLE MONITOR MODE
   if (mode === 'single' || displays.length === 1 || windowedMode) {
+    const requestedId = displayId ?? mosaicConfig?.display1Id;
     const target =
-      displays.find((d) => d.id === (mosaicConfig?.display1Id ?? displayId)) ||
+      displays.find((d) => d.id === requestedId) ||
       displays.find((d) => !d.isPrimary) ||
       primary;
 
@@ -266,33 +285,17 @@ function openOutputWindows(
       height: useFullscreen ? target.height : 540,
     };
 
-    // If testing Mosaic in 1-screen windowed mode, shape the test window like the Mosaic!
-    if (windowedMode && mode === 'horizontal_2x1') {
-      currentTotalWidth = target.physicalWidth * 2 - overlapPx;
-      currentTotalHeight = target.physicalHeight;
-      winBounds = { x: target.x + 60, y: target.y + 100, width: 1280, height: 360 };
-    } else if (windowedMode && mode === 'vertical_1x2') {
-      currentTotalWidth = target.physicalWidth;
-      currentTotalHeight = target.physicalHeight * 2 - overlapPx;
-      winBounds = { x: target.x + 120, y: target.y + 60, width: 540, height: 640 };
-    }
-
-    const win = spawnSingleOutputBrowserWindow(
-      winBounds,
-      false,
-      useFullscreen,
-      {
-        mode,
-        role: 'full',
-        canvasWidth: currentTotalWidth,
-        canvasHeight: currentTotalHeight,
-        sliceX: 0,
-        sliceY: 0,
-        sliceWidth: currentTotalWidth,
-        sliceHeight: currentTotalHeight,
-        label: `OUTPUT (${currentTotalWidth}×${currentTotalHeight})`,
-      }
-    );
+    const win = spawnSingleOutputBrowserWindow(winBounds, false, useFullscreen, {
+      mode,
+      role: 'full',
+      canvasWidth: currentTotalWidth,
+      canvasHeight: currentTotalHeight,
+      sliceX: 0,
+      sliceY: 0,
+      sliceWidth: currentTotalWidth,
+      sliceHeight: currentTotalHeight,
+      label: `OUTPUT (${currentTotalWidth}×${currentTotalHeight})`,
+    });
     outputWindows.push(win);
     notifyOutputStatus();
     return;
@@ -317,8 +320,8 @@ function openOutputWindows(
 
     const w1 = spawnSingleOutputBrowserWindow(
       { x: d1.x, y: d1.y, width: d1.width, height: d1.height },
-      true,
       false,
+      true,
       {
         mode: 'mirror_2x',
         role: 'full',
@@ -336,8 +339,8 @@ function openOutputWindows(
     if (d2.id !== d1.id) {
       const w2 = spawnSingleOutputBrowserWindow(
         { x: d2.x, y: d2.y, width: d2.width, height: d2.height },
-        true,
         false,
+        true,
         {
           mode: 'mirror_2x',
           role: 'full',
@@ -368,7 +371,6 @@ function openOutputWindows(
   currentTotalWidth = totalPhysW;
   currentTotalHeight = totalPhysH;
 
-  // Check if d1 and d2 are physically adjacent in Windows Desktop coordinates in the correct order
   const areHorizontallyContiguous =
     isHorizontal &&
     Math.abs(d1.x + d1.width - d2.x) <= 4 &&
@@ -386,7 +388,6 @@ function openOutputWindows(
     (areHorizontallyContiguous || areVerticallyContiguous);
 
   if (useSingleSpannedSurface && d1.id !== d2.id) {
-    // NVIDIA-Mosaic style single borderless window spanning both displays in VRAM!
     currentIsSpanned = true;
     const minX = Math.min(d1.x, d2.x);
     const minY = Math.min(d1.y, d2.y);
@@ -411,7 +412,6 @@ function openOutputWindows(
     );
     outputWindows.push(spannedWin);
   } else {
-    // Independent viewport-sliced windows (works even if monitors aren't adjacent in Windows or have custom overlap!)
     currentIsSpanned = false;
 
     const slice1 = isHorizontal
@@ -444,8 +444,8 @@ function openOutputWindows(
 
     const w1 = spawnSingleOutputBrowserWindow(
       { x: d1.x, y: d1.y, width: d1.width, height: d1.height },
-      true,
       false,
+      true,
       {
         mode,
         role: 'slot1',
@@ -460,8 +460,8 @@ function openOutputWindows(
     if (d2.id !== d1.id) {
       const w2 = spawnSingleOutputBrowserWindow(
         { x: d2.x, y: d2.y, width: d2.width, height: d2.height },
-        true,
         false,
+        true,
         {
           mode,
           role: 'slot2',
@@ -621,7 +621,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.3.0');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.4.0');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {
@@ -653,11 +653,11 @@ ipcMain.handle('install-companion-module', () => {
 ipcMain.handle('select-video-files', async () => {
   if (!mainWindow) return [];
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Añadir vídeos al Show (Mitti / PlaybackPro+)',
+    title: 'Añadir Archivos de Vídeo al Cue List',
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
-        name: 'Archivos de Vídeo Broadcast y Multimedia',
+        name: 'Archivos de Vídeo',
         extensions: [
           'mp4',
           'mov',
@@ -679,6 +679,32 @@ ipcMain.handle('select-video-files', async () => {
   });
   if (res.canceled) return [];
   return res.filePaths;
+});
+
+ipcMain.handle('select-video-folder', async () => {
+  if (!mainWindow) return [];
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Seleccionar Carpeta con Vídeos',
+    properties: ['openDirectory', 'multiSelections'],
+  });
+  if (res.canceled || res.filePaths.length === 0) return [];
+  return expandPathsToVideoFiles(res.filePaths);
+});
+
+ipcMain.handle('expand-dropped-paths', (_event, rawPaths: string[]) => {
+  return expandPathsToVideoFiles(rawPaths || []);
+});
+
+ipcMain.handle('locate-file-in-folder', (_event, filePath: string) => {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      shell.showItemInFolder(filePath);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 });
 
 ipcMain.handle('relink-video-file', async (_event, oldName: string) => {
@@ -704,7 +730,15 @@ ipcMain.handle('probe-media', async (_event, filePath: string) => {
 
 ipcMain.handle(
   'transcode-proxy',
-  async (_event, payload: { cueId: string; filePath: string; duration: number }) => {
+  async (
+    _event,
+    payload: {
+      cueId: string;
+      filePath: string;
+      duration: number;
+      options?: ConvertVideoOptions;
+    }
+  ) => {
     const cacheDir = path.join(app.getPath('userData'), 'proxy_cache');
     const proxyPath = await transcodeToPlayableMp4(
       payload.filePath,
@@ -717,7 +751,8 @@ ipcMain.handle(
             percent,
           });
         }
-      }
+      },
+      payload.options
     );
     return proxyPath;
   }
@@ -733,14 +768,65 @@ ipcMain.handle('generate-demo-clips', async () => {
   return results;
 });
 
+// Returns the 3 bundled demo videos ONLY on the very first run of the app
+ipcMain.handle('get-first-run-demo-clips', async () => {
+  try {
+    const userDataDir = app.getPath('userData');
+    const flagPath = path.join(userDataDir, 'first_run_demos_initialized.flag');
+    const autosavePath = path.join(userDataDir, 'autosave_show.cueshow');
+
+    if (fs.existsSync(flagPath) || fs.existsSync(autosavePath)) {
+      return [];
+    }
+
+    fs.writeFileSync(flagPath, new Date().toISOString(), 'utf-8');
+
+    const demoDir = path.join(userDataDir, 'demo_media');
+    fs.mkdirSync(demoDir, { recursive: true });
+
+    // Check if pre-built demo videos exist in bundled resources
+    const bundledCandidates = [
+      path.join(process.resourcesPath || '', 'demo_media'),
+      path.join(__dirname, '../build/demo_media'),
+    ];
+    let copiedPaths: string[] = [];
+
+    for (const candidateDir of bundledCandidates) {
+      if (fs.existsSync(candidateDir)) {
+        const files = fs.readdirSync(candidateDir).filter((f) => f.endsWith('.mp4'));
+        if (files.length >= 3) {
+          for (const f of files) {
+            const dest = path.join(demoDir, f);
+            if (!fs.existsSync(dest)) {
+              fs.copyFileSync(path.join(candidateDir, f), dest);
+            }
+            copiedPaths.push(dest);
+          }
+          break;
+        }
+      }
+    }
+
+    if (copiedPaths.length === 0) {
+      copiedPaths = await generateDemoClips(demoDir);
+    }
+
+    const results = [];
+    for (const p of copiedPaths) {
+      results.push(await probeMediaFile(p));
+    }
+    return results;
+  } catch {
+    return [];
+  }
+});
+
 ipcMain.handle('save-show-file', async (_event, showDataJson: string, defaultName: string) => {
   if (!mainWindow) return null;
   const res = await dialog.showSaveDialog(mainWindow, {
-    title: 'Guardar Show de CuePro Studio',
+    title: 'Guardar Proyecto',
     defaultPath: defaultName.endsWith('.cueshow') ? defaultName : `${defaultName}.cueshow`,
-    filters: [
-      { name: 'CuePro Show (*.cueshow)', extensions: ['cueshow', 'json'] },
-    ],
+    filters: [{ name: 'CuePro Show (*.cueshow)', extensions: ['cueshow', 'json'] }],
   });
   if (res.canceled || !res.filePath) return null;
   fs.writeFileSync(res.filePath, showDataJson, 'utf-8');
@@ -750,11 +836,9 @@ ipcMain.handle('save-show-file', async (_event, showDataJson: string, defaultNam
 ipcMain.handle('open-show-file', async () => {
   if (!mainWindow) return null;
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Abrir Show de CuePro Studio',
+    title: 'Abrir Proyecto',
     properties: ['openFile'],
-    filters: [
-      { name: 'CuePro Show (*.cueshow, *.json)', extensions: ['cueshow', 'json'] },
-    ],
+    filters: [{ name: 'CuePro Show (*.cueshow, *.json)', extensions: ['cueshow', 'json'] }],
   });
   if (res.canceled || res.filePaths.length === 0) return null;
   const filePath = res.filePaths[0];

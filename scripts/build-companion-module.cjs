@@ -1,10 +1,109 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const esbuild = require('esbuild');
+const ffmpegPath = require('ffmpeg-static');
+
+function ensureDemoMediaInBuild(rootDir) {
+  const demoDir = path.join(rootDir, 'build', 'demo_media');
+  fs.mkdirSync(demoDir, { recursive: true });
+
+  const specs = [
+    {
+      name: '01_Opening_Countdown_1080p50.mp4',
+      args: [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=1920x1080:rate=50:duration=12',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000:duration=12',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-preset',
+        'ultrafast',
+        '-b:v',
+        '4500k',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+      ],
+    },
+    {
+      name: '02_SMPTE_HD_Bars_Tone_1080p50.mp4',
+      args: [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'smptehdbars=size=1920x1080:rate=50:duration=15',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=528:sample_rate=48000:duration=15',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-preset',
+        'ultrafast',
+        '-b:v',
+        '4000k',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+      ],
+    },
+    {
+      name: '03_Stage_Motion_Loop_1080p50.mp4',
+      args: [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'mandelbrot=size=1280x720:rate=30,scale=1920:1080',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:sample_rate=48000:duration=10',
+        '-t',
+        '10',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-preset',
+        'ultrafast',
+        '-b:v',
+        '4500k',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+      ],
+    },
+  ];
+
+  for (const s of specs) {
+    const outPath = path.join(demoDir, s.name);
+    if (!fs.existsSync(outPath) && ffmpegPath) {
+      console.log(`Generating bundled demo clip: ${s.name}...`);
+      execFileSync(ffmpegPath, [...s.args, outPath], { stdio: 'ignore' });
+    }
+  }
+}
 
 async function buildModule() {
   const rootDir = path.join(__dirname, '..');
+  ensureDemoMediaInBuild(rootDir);
+
   const modDir = path.join(rootDir, 'companion-module');
   const distDir = path.join(modDir, 'dist-module');
   const releaseDir = path.join(rootDir, 'release');
@@ -12,7 +111,7 @@ async function buildModule() {
   const pkgStagingDir = path.join(modDir, 'package');
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-  const version = pkgJson.version || '1.2.1';
+  const version = pkgJson.version || '1.4.0';
 
   fs.mkdirSync(path.join(distDir, 'companion'), { recursive: true });
   fs.mkdirSync(path.join(pkgStagingDir, 'companion'), { recursive: true });

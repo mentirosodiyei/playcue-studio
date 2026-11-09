@@ -8,54 +8,61 @@ import {
   RotateCw,
   FlipHorizontal,
   FlipVertical,
-  Wand2,
   Link,
   CheckCircle2,
-  Sparkles,
   CopyCheck,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import {
   VideoCue,
-  CueColor,
   EndAction,
   ScaleMode,
   AspectRatioMode,
   TransitionType,
+  ConvertVideoOptions,
 } from '../types/cue';
 import {
   formatTimecode,
   formatBytes,
   gainToDbString,
-  CUE_COLOR_MAP,
 } from '../utils/timecode';
-import { ASPECT_RATIO_OPTIONS } from '../utils/videoGeometry';
+import { ASPECT_RATIO_OPTIONS, computeVideoBox } from '../utils/videoGeometry';
 
 interface CueInspectorProps {
   cue: VideoCue | null;
   prvCurrentTime: number;
+  totalCanvasWidth?: number;
+  totalCanvasHeight?: number;
   onUpdateCue: (id: string, patch: Partial<VideoCue>) => void;
   onApplyGeometryToAllCues?: (sourceCue: VideoCue) => void;
-  onOptimizeProxy: (cue: VideoCue) => void;
+  onOptimizeProxy: (cue: VideoCue, options?: ConvertVideoOptions) => void;
   onRelinkCue: (cue: VideoCue) => void;
 }
 
 export const CueInspector: React.FC<CueInspectorProps> = ({
   cue,
   prvCurrentTime,
+  totalCanvasWidth = 2560,
+  totalCanvasHeight = 1440,
   onUpdateCue,
   onApplyGeometryToAllCues,
   onOptimizeProxy,
   onRelinkCue,
 }) => {
-  const [activeTab, setActiveTab] = useState<'time' | 'audio' | 'video' | 'file'>('video');
+  const [activeTab, setActiveTab] = useState<'video' | 'time' | 'audio' | 'file'>('video');
+
+  // Basic codec conversion settings state
+  const [convCodec, setConvCodec] = useState<ConvertVideoOptions['targetCodec']>('h264');
+  const [convQuality, setConvQuality] = useState<ConvertVideoOptions['quality']>('high');
+  const [convRes, setConvRes] = useState<ConvertVideoOptions['resolution']>('original');
 
   if (!cue) {
     return (
       <div className="inspector-panel empty">
-        <Sliders size={28} strokeWidth={1.4} />
-        <h4>INSPECTOR DE CUE</h4>
-        <p>Selecciona un vídeo en la escaleta para ajustar Formato, Aspect Ratio, Blur 90%, In/Out y Audio.</p>
+        <Sliders size={26} strokeWidth={1.4} />
+        <h4>AJUSTES DEL VÍDEO</h4>
+        <p>Selecciona un vídeo en el Cue List para configurar AR, posición, recorte, audio y códec.</p>
       </div>
     );
   }
@@ -72,13 +79,33 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
   const bgBlurBrightness = cue.bgBlurBrightness ?? 75;
   const bgBlurZoom = cue.bgBlurZoom ?? 125;
 
+  const computedBox = computeVideoBox({
+    scaleMode: cue.scaleMode,
+    aspectRatio: arVal,
+    zoom: zoomVal,
+    scaleX: scaleXVal,
+    scaleY: scaleYVal,
+    offsetX: offsetXVal,
+    offsetY: offsetYVal,
+    canvasWidth: totalCanvasWidth,
+    canvasHeight: totalCanvasHeight,
+    videoWidth: cue.width || 1920,
+    videoHeight: cue.height || 1080,
+  });
+
+  // Clip gain slider with magnetic snap at 0.0 dB (100%)
+  const handleClipGainChange = (rawVal: number) => {
+    const snapped = rawVal >= 96 && rawVal <= 104 ? 100 : rawVal;
+    onUpdateCue(cue.id, { volume: snapped });
+  };
+
   return (
     <div className="inspector-panel">
       {/* Inspector Header */}
       <div className="inspector-header">
         <div className="inspector-title-row">
-          <span className="inspector-badge">INSPECTOR</span>
-          <span className="inspector-cue-tag">CUE #{cue.cueNumber}</span>
+          <span className="inspector-badge">AJUSTES DE VÍDEO</span>
+          <span className="inspector-cue-tag">#{cue.cueNumber}</span>
         </div>
         <div className="inspector-clip-name truncate" title={cue.name}>
           {cue.name}
@@ -90,73 +117,416 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
             className={activeTab === 'video' ? 'active' : ''}
             onClick={() => setActiveTab('video')}
           >
-            <Monitor size={13} />
-            <span>Vídeo / Salida</span>
+            <Monitor size={12} />
+            <span>Vídeo</span>
           </button>
           <button
             className={activeTab === 'time' ? 'active' : ''}
             onClick={() => setActiveTab('time')}
           >
-            <Scissors size={13} />
+            <Scissors size={12} />
             <span>Tiempo</span>
           </button>
           <button
             className={activeTab === 'audio' ? 'active' : ''}
             onClick={() => setActiveTab('audio')}
           >
-            <Volume2 size={13} />
+            <Volume2 size={12} />
             <span>Audio</span>
           </button>
           <button
             className={activeTab === 'file' ? 'active' : ''}
             onClick={() => setActiveTab('file')}
           >
-            <FileVideo size={13} />
+            <FileVideo size={12} />
             <span>Códec</span>
           </button>
         </div>
       </div>
 
       <div className="inspector-body">
-        {/* ================= TAB 1: TIME & TRIM ================= */}
-        {activeTab === 'time' && (
+        {/* ================= TAB 1: VIDEO, AR, NUMERIC GEOMETRY & BLUR AT BOTTOM ================= */}
+        {activeTab === 'video' && (
           <div className="insp-section-stack">
+            {/* 1. Screen Fit & Aspect Ratio (AR) + Numeric Window Controls */}
             <div className="insp-group">
-              <label className="insp-label">IDENTIFICACIÓN Y COLOR</label>
-              <div className="insp-row-2col">
-                <div>
-                  <small>Cue #</small>
-                  <input
-                    type="text"
-                    className="insp-input"
-                    value={cue.cueNumber}
-                    onChange={(e) => onUpdateCue(cue.id, { cueNumber: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <small>Nombre en Escaleta</small>
-                  <input
-                    type="text"
-                    className="insp-input"
-                    value={cue.name}
-                    onChange={(e) => onUpdateCue(cue.id, { name: e.target.value })}
-                  />
+              <label className="insp-label">AJUSTE A PANTALLA Y RELACIÓN DE ASPECTO (AR)</label>
+              <div className="pill-row">
+                {(
+                  [
+                    { id: 'fit', label: 'FIT (Ajustar)' },
+                    { id: 'fill', label: 'FILL (Llenar)' },
+                    { id: 'stretch', label: 'STRETCH (Estirar)' },
+                  ] as { id: ScaleMode; label: string }[]
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    className={`mini-pill ${cue.scaleMode === s.id ? 'selected' : ''}`}
+                    onClick={() => onUpdateCue(cue.id, { scaleMode: s.id })}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <small className="insp-sub-label">Preajustes de Relación de Aspecto (AR):</small>
+                <div className="pill-row" style={{ marginTop: 4 }}>
+                  {(
+                    [
+                      'native',
+                      'output',
+                      '16:9',
+                      '16:10',
+                      '4:3',
+                      '21:9',
+                      '32:9',
+                      '9:16',
+                      '1:1',
+                    ] as AspectRatioMode[]
+                  ).map((ar) => {
+                    const opt = ASPECT_RATIO_OPTIONS.find((o) => o.id === ar);
+                    return (
+                      <button
+                        key={ar}
+                        className={`mini-pill ${arVal === ar ? 'selected' : ''}`}
+                        onClick={() => onUpdateCue(cue.id, { aspectRatio: ar })}
+                      >
+                        {opt?.shortLabel || ar}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="color-picker-row">
-                {(Object.keys(CUE_COLOR_MAP) as CueColor[]).map((col) => (
-                  <button
-                    key={col}
-                    className={`color-swatch-btn ${cue.color === col ? 'selected' : ''}`}
-                    style={{ backgroundColor: CUE_COLOR_MAP[col].dot }}
-                    onClick={() => onUpdateCue(cue.id, { color: col })}
-                    title={CUE_COLOR_MAP[col].label}
+              {/* Numeric Geometry Controls (Synced with Mouse Drag & 4 Corners) */}
+              <div className="numeric-geometry-panel">
+                <div className="insp-label-flex" style={{ marginBottom: 6 }}>
+                  <small className="insp-sub-label">
+                    Tamaño y Posición de Ventana (Ratón / Numérico):
+                  </small>
+                  <span className="px-readout">
+                    {computedBox.pixelWidth}×{computedBox.pixelHeight} px
+                  </span>
+                </div>
+
+                <div className="num-grid-2x2">
+                  <div className="num-field">
+                    <label>Escala H (Ancho %)</label>
+                    <input
+                      type="number"
+                      className="insp-input"
+                      min={10}
+                      max={400}
+                      step={1}
+                      value={scaleXVal}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          scaleX: Math.max(10, Math.min(400, parseFloat(e.target.value) || 100)),
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="num-field">
+                    <label>Escala V (Alto %)</label>
+                    <input
+                      type="number"
+                      className="insp-input"
+                      min={10}
+                      max={400}
+                      step={1}
+                      value={scaleYVal}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          scaleY: Math.max(10, Math.min(400, parseFloat(e.target.value) || 100)),
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="num-field">
+                    <label>Posición X (%)</label>
+                    <input
+                      type="number"
+                      className="insp-input"
+                      min={-100}
+                      max={100}
+                      step={0.5}
+                      value={offsetXVal}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          offsetX: Math.max(-100, Math.min(100, parseFloat(e.target.value) || 0)),
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="num-field">
+                    <label>Posición Y (%)</label>
+                    <input
+                      type="number"
+                      className="insp-input"
+                      min={-100}
+                      max={100}
+                      step={0.5}
+                      value={offsetYVal}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          offsetY: Math.max(-100, Math.min(100, parseFloat(e.target.value) || 0)),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <div className="insp-label-flex">
+                    <small className="insp-sub-label">Zoom General Uniforme (%)</small>
+                    <input
+                      type="number"
+                      className="insp-input compact-num"
+                      min={20}
+                      max={300}
+                      step={1}
+                      value={zoomVal}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          zoom: Math.max(20, Math.min(300, parseFloat(e.target.value) || 100)),
+                        })
+                      }
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={300}
+                    step={1}
+                    value={zoomVal}
+                    onChange={(e) =>
+                      onUpdateCue(cue.id, { zoom: parseInt(e.target.value, 10) })
+                    }
                   />
-                ))}
+                </div>
+
+                <div className="pill-row" style={{ marginTop: 8 }}>
+                  <button
+                    className="mini-action-btn"
+                    onClick={() =>
+                      onUpdateCue(cue.id, {
+                        zoom: 100,
+                        scaleX: 100,
+                        scaleY: 100,
+                        offsetX: 0,
+                        offsetY: 0,
+                        aspectRatio: 'native',
+                        scaleMode: 'fit',
+                      })
+                    }
+                  >
+                    <RotateCcw size={11} /> Resetear Ventana
+                  </button>
+                  {onApplyGeometryToAllCues && (
+                    <button
+                      className="mini-action-btn accent-link"
+                      onClick={() => onApplyGeometryToAllCues(cue)}
+                      title="Copia estos ajustes de ventana, AR y fondo blur a todos los vídeos del Cue List"
+                    >
+                      <CopyCheck size={11} /> Aplicar a Todos
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
+            {/* 2. Rotation & Flip */}
+            <div className="insp-group">
+              <label className="insp-label">ROTACIÓN Y ESPEJO</label>
+              <div className="pill-row">
+                {([0, 90, 180, 270] as const).map((deg) => (
+                  <button
+                    key={deg}
+                    className={`mini-pill ${cue.rotation === deg ? 'selected' : ''}`}
+                    onClick={() => onUpdateCue(cue.id, { rotation: deg })}
+                  >
+                    <RotateCw size={11} /> {deg}°
+                  </button>
+                ))}
+                <button
+                  className={`mini-pill ${cue.flipH ? 'selected' : ''}`}
+                  onClick={() => onUpdateCue(cue.id, { flipH: !cue.flipH })}
+                >
+                  <FlipHorizontal size={12} /> H
+                </button>
+                <button
+                  className={`mini-pill ${cue.flipV ? 'selected' : ''}`}
+                  onClick={() => onUpdateCue(cue.id, { flipV: !cue.flipV })}
+                >
+                  <FlipVertical size={12} /> V
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Transition & Opacity / Fades */}
+            <div className="insp-group">
+              <label className="insp-label">TRANSICIÓN Y FUNDIDOS DE VÍDEO</label>
+              <div className="insp-row-2col">
+                <select
+                  className="insp-select"
+                  value={cue.transitionType}
+                  onChange={(e) =>
+                    onUpdateCue(cue.id, {
+                      transitionType: e.target.value as TransitionType,
+                    })
+                  }
+                >
+                  <option value="cut">Cut (Corte 0s)</option>
+                  <option value="dissolve">Cross Dissolve (Mix)</option>
+                  <option value="dipToBlack">Dip to Black</option>
+                  <option value="wipe">Wipe Horizontal</option>
+                </select>
+                <input
+                  type="number"
+                  className="insp-input"
+                  min={0.1}
+                  max={10}
+                  step={0.1}
+                  value={cue.transitionDuration}
+                  onChange={(e) =>
+                    onUpdateCue(cue.id, {
+                      transitionDuration: Math.max(0.1, parseFloat(e.target.value) || 1),
+                    })
+                  }
+                />
+              </div>
+
+              <div className="insp-row-2col" style={{ marginTop: 8 }}>
+                <div>
+                  <small>Fade In Vídeo ({cue.videoFadeIn.toFixed(1)}s)</small>
+                  <input
+                    type="range"
+                    min={0}
+                    max={8}
+                    step={0.2}
+                    value={cue.videoFadeIn}
+                    onChange={(e) =>
+                      onUpdateCue(cue.id, { videoFadeIn: parseFloat(e.target.value) })
+                    }
+                  />
+                </div>
+                <div>
+                  <small>Fade Out Vídeo ({cue.videoFadeOut.toFixed(1)}s)</small>
+                  <input
+                    type="range"
+                    min={0}
+                    max={8}
+                    step={0.2}
+                    value={cue.videoFadeOut}
+                    onChange={(e) =>
+                      onUpdateCue(cue.id, { videoFadeOut: parseFloat(e.target.value) })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. AT THE VERY BOTTOM: Background Blur Layer */}
+            <div className={`insp-group blur-layer-box ${bgBlurOn ? 'active' : ''}`}>
+              <div className="insp-label-flex">
+                <label className="insp-label">CAPA DE FONDO CON BLUR</label>
+                <span className={`status-pill ${bgBlurOn ? 'on' : 'off'}`}>
+                  {bgBlurOn ? `${bgBlurAmount}% ON` : 'OFF'}
+                </span>
+              </div>
+
+              <button
+                className={`full-width-btn blur-master-toggle ${bgBlurOn ? 'active' : ''}`}
+                onClick={() =>
+                  onUpdateCue(cue.id, {
+                    bgBlurEnabled: !bgBlurOn,
+                    bgBlurAmount: cue.bgBlurAmount ?? 90,
+                    bgBlurBrightness: cue.bgBlurBrightness ?? 75,
+                    bgBlurZoom: cue.bgBlurZoom ?? 125,
+                  })
+                }
+              >
+                <span>
+                  {bgBlurOn
+                    ? 'Desactivar Capa de Fondo con Blur'
+                    : 'Generar Capa de Fondo con Blur (90%)'}
+                </span>
+              </button>
+
+              {bgBlurOn && (
+                <div className="blur-sliders-stack">
+                  <div className="insp-label-flex" style={{ marginTop: 6 }}>
+                    <small>Nivel de Blur ({bgBlurAmount}%)</small>
+                    <input
+                      type="number"
+                      className="insp-input compact-num"
+                      min={10}
+                      max={100}
+                      step={5}
+                      value={bgBlurAmount}
+                      onChange={(e) =>
+                        onUpdateCue(cue.id, {
+                          bgBlurAmount: Math.max(10, Math.min(100, parseInt(e.target.value, 10) || 90)),
+                        })
+                      }
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={bgBlurAmount}
+                    onChange={(e) =>
+                      onUpdateCue(cue.id, { bgBlurAmount: parseInt(e.target.value, 10) })
+                    }
+                  />
+
+                  <div className="insp-row-2col" style={{ marginTop: 6 }}>
+                    <div>
+                      <small>Brillo Fondo ({bgBlurBrightness}%)</small>
+                      <input
+                        type="range"
+                        min={20}
+                        max={100}
+                        step={5}
+                        value={bgBlurBrightness}
+                        onChange={(e) =>
+                          onUpdateCue(cue.id, {
+                            bgBlurBrightness: parseInt(e.target.value, 10),
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <small>Escala Fondo ({bgBlurZoom}%)</small>
+                      <input
+                        type="range"
+                        min={105}
+                        max={200}
+                        step={5}
+                        value={bgBlurZoom}
+                        onChange={(e) =>
+                          onUpdateCue(cue.id, {
+                            bgBlurZoom: parseInt(e.target.value, 10),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 2: TIME & TRIM (CLEANED UP) ================= */}
+        {activeTab === 'time' && (
+          <div className="insp-section-stack">
             {/* In / Out Trim */}
             <div className="insp-group">
               <label className="insp-label">RECORTE IN / OUT (TRIM)</label>
@@ -247,15 +617,15 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   onUpdateCue(cue.id, { endAction: e.target.value as EndAction })
                 }
               >
-                <option value="hold">HOLD — Congelar en último fotograma (Mitti Pause at End)</option>
-                <option value="black">BLACK — Fundir / Cortar a negro al terminar</option>
+                <option value="hold">HOLD — Congelar en último fotograma</option>
+                <option value="black">BLACK — Ir a negro al terminar</option>
                 <option value="loop">LOOP — Bucle infinito entre In y Out</option>
-                <option value="next">PLAY NEXT — Encadenar con el siguiente Cue</option>
+                <option value="next">PLAY NEXT — Encadenar con el siguiente vídeo</option>
                 <option value="stop">STOP — Detener y limpiar salida</option>
               </select>
             </div>
 
-            {/* Playback Speed & Notes */}
+            {/* Playback Speed */}
             <div className="insp-group">
               <label className="insp-label">VELOCIDAD DE REPRODUCCIÓN ({cue.playbackRate}x)</label>
               <div className="pill-row">
@@ -270,38 +640,35 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                 ))}
               </div>
             </div>
-
-            <div className="insp-group">
-              <label className="insp-label">NOTAS DE GUION / REGIDURÍA</label>
-              <textarea
-                className="insp-textarea"
-                rows={2}
-                placeholder="Ej: Lanzar tras aplauso de ponente, micro abierto..."
-                value={cue.notes}
-                onChange={(e) => onUpdateCue(cue.id, { notes: e.target.value })}
-              />
-            </div>
           </div>
         )}
 
-        {/* ================= TAB 2: AUDIO ================= */}
+        {/* ================= TAB 3: AUDIO (WITH SNAP AT 0.0 dB) ================= */}
         {activeTab === 'audio' && (
           <div className="insp-section-stack">
             <div className="insp-group">
               <div className="insp-label-flex">
-                <label className="insp-label">GANANCIA DE CLIP (VOLUME)</label>
-                <span className="db-readout">{gainToDbString(cue.volume, cue.muted)}</span>
+                <label className="insp-label">GANANCIA DEL CLIP (SNAP EN 0 dB)</label>
+                <span className={`db-readout ${cue.volume === 100 && !cue.muted ? 'zero-db' : ''}`}>
+                  {gainToDbString(cue.volume, cue.muted)}
+                </span>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={150}
-                step={1}
-                value={cue.volume}
-                onChange={(e) =>
-                  onUpdateCue(cue.id, { volume: parseInt(e.target.value, 10) })
-                }
-              />
+              <div className="slider-with-zero-mark">
+                <div
+                  className="horizontal-zero-tick"
+                  style={{ left: `${(100 / 150) * 100}%` }}
+                  title="0.0 dB (100%)"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={150}
+                  step={1}
+                  value={cue.volume}
+                  onChange={(e) => handleClipGainChange(parseInt(e.target.value, 10))}
+                  onDoubleClick={() => onUpdateCue(cue.id, { volume: 100 })}
+                />
+              </div>
               <div className="pill-row" style={{ marginTop: 6 }}>
                 <button
                   className={`mini-pill ${cue.muted ? 'selected-danger' : ''}`}
@@ -310,16 +677,22 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   {cue.muted ? 'MUTE ACTIVO' : 'SILENCIAR (MUTE)'}
                 </button>
                 <button
-                  className="mini-pill"
+                  className={`mini-pill ${cue.volume === 100 && !cue.muted ? 'selected' : ''}`}
                   onClick={() => onUpdateCue(cue.id, { volume: 100, muted: false })}
                 >
                   0.0 dB (100%)
                 </button>
                 <button
                   className="mini-pill"
-                  onClick={() => onUpdateCue(cue.id, { volume: 70 })}
+                  onClick={() => onUpdateCue(cue.id, { volume: 71 })}
                 >
-                  -3.0 dB (70%)
+                  -3.0 dB
+                </button>
+                <button
+                  className="mini-pill"
+                  onClick={() => onUpdateCue(cue.id, { volume: 50 })}
+                >
+                  -6.0 dB
                 </button>
               </div>
             </div>
@@ -360,390 +733,23 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 3: VIDEO, ASPECT RATIO, ZOOM & BLUR 90% ================= */}
-        {activeTab === 'video' && (
-          <div className="insp-section-stack">
-            {/* 1. Background Blur Fill Layer (90%) */}
-            <div className={`insp-group blur-layer-box ${bgBlurOn ? 'active' : ''}`}>
-              <div className="insp-label-flex">
-                <label className="insp-label" style={{ color: '#e9d5ff' }}>
-                  CAPA FONDO AMPLIADO + BLUR ({bgBlurAmount}%)
-                </label>
-                <span className={`status-pill ${bgBlurOn ? 'on' : 'off'}`}>
-                  {bgBlurOn ? 'ACTIVO' : 'OFF'}
-                </span>
-              </div>
-
-              <button
-                className={`full-width-btn blur-master-toggle ${bgBlurOn ? 'active' : ''}`}
-                onClick={() =>
-                  onUpdateCue(cue.id, {
-                    bgBlurEnabled: !bgBlurOn,
-                    bgBlurAmount: cue.bgBlurAmount ?? 90,
-                    bgBlurBrightness: cue.bgBlurBrightness ?? 75,
-                    bgBlurZoom: cue.bgBlurZoom ?? 125,
-                  })
-                }
-              >
-                <Sparkles size={15} />
-                <span>
-                  {bgBlurOn
-                    ? `Fondo Ampliado + Blur (${bgBlurAmount}%) ACTIVADO`
-                    : 'Activar Capa Inferior con Vídeo Ampliado + Blur 90%'}
-                </span>
-              </button>
-
-              {bgBlurOn && (
-                <div className="blur-sliders-stack">
-                  <div className="insp-label-flex" style={{ marginTop: 8 }}>
-                    <small>Desenfoque (Blur)</small>
-                    <strong>{bgBlurAmount}%</strong>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={100}
-                    step={5}
-                    value={bgBlurAmount}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { bgBlurAmount: parseInt(e.target.value, 10) })
-                    }
-                  />
-
-                  <div className="insp-row-2col" style={{ marginTop: 6 }}>
-                    <div>
-                      <small>Brillo Fondo ({bgBlurBrightness}%)</small>
-                      <input
-                        type="range"
-                        min={20}
-                        max={100}
-                        step={5}
-                        value={bgBlurBrightness}
-                        onChange={(e) =>
-                          onUpdateCue(cue.id, {
-                            bgBlurBrightness: parseInt(e.target.value, 10),
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <small>Zoom Fondo ({bgBlurZoom}%)</small>
-                      <input
-                        type="range"
-                        min={105}
-                        max={200}
-                        step={5}
-                        value={bgBlurZoom}
-                        onChange={(e) =>
-                          onUpdateCue(cue.id, {
-                            bgBlurZoom: parseInt(e.target.value, 10),
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 2. Scale Mode & Aspect Ratio */}
-            <div className="insp-group">
-              <label className="insp-label">AJUSTE A PANTALLA Y RELACIÓN DE ASPECTO</label>
-              <div className="pill-row">
-                {(
-                  [
-                    { id: 'fit', label: 'FIT (Ajustar)' },
-                    { id: 'fill', label: 'FILL (Llenar)' },
-                    { id: 'stretch', label: 'STRETCH (Estirar)' },
-                  ] as { id: ScaleMode; label: string }[]
-                ).map((s) => (
-                  <button
-                    key={s.id}
-                    className={`mini-pill ${cue.scaleMode === s.id ? 'selected' : ''}`}
-                    onClick={() => onUpdateCue(cue.id, { scaleMode: s.id })}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                <small style={{ display: 'block', marginBottom: 4, color: '#94a3b8' }}>
-                  Forzar Relación de Aspecto (Aspect Ratio):
-                </small>
-                <select
-                  className="insp-select"
-                  value={arVal}
-                  onChange={(e) =>
-                    onUpdateCue(cue.id, { aspectRatio: e.target.value as AspectRatioMode })
-                  }
-                >
-                  {ASPECT_RATIO_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pill-row" style={{ marginTop: 6 }}>
-                {(['native', 'output', '16:9', '16:10', '4:3', '21:9', '9:16'] as AspectRatioMode[]).map(
-                  (ar) => (
-                    <button
-                      key={ar}
-                      className={`mini-pill ${arVal === ar ? 'selected' : ''}`}
-                      onClick={() => onUpdateCue(cue.id, { aspectRatio: ar })}
-                    >
-                      {ar === 'native' ? 'Nativo' : ar === 'output' ? 'Full Salida' : ar}
-                    </button>
-                  )
-                )}
-              </div>
-            </div>
-
-            {/* 3. Zoom / Amplification & X/Y Scale / Offset */}
-            <div className="insp-group">
-              <div className="insp-label-flex">
-                <label className="insp-label">AMPLIACIÓN / ZOOM EN SALIDA</label>
-                <span className="db-readout">{zoomVal}%</span>
-              </div>
-              <input
-                type="range"
-                min={50}
-                max={300}
-                step={1}
-                value={zoomVal}
-                onChange={(e) =>
-                  onUpdateCue(cue.id, { zoom: parseInt(e.target.value, 10) })
-                }
-              />
-              <div className="pill-row" style={{ marginTop: 6 }}>
-                {[
-                  { val: 100, label: '100%' },
-                  { val: 115, label: '115%' },
-                  { val: 133, label: '133% (QHD)' },
-                  { val: 150, label: '150%' },
-                  { val: 200, label: '200%' },
-                ].map((p) => (
-                  <button
-                    key={p.val}
-                    className={`mini-pill ${zoomVal === p.val ? 'selected' : ''}`}
-                    onClick={() => onUpdateCue(cue.id, { zoom: p.val })}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="insp-row-2col" style={{ marginTop: 8 }}>
-                <div>
-                  <small>Escala Ancho X ({scaleXVal}%)</small>
-                  <input
-                    type="range"
-                    min={50}
-                    max={200}
-                    step={1}
-                    value={scaleXVal}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { scaleX: parseInt(e.target.value, 10) })
-                    }
-                  />
-                </div>
-                <div>
-                  <small>Escala Alto Y ({scaleYVal}%)</small>
-                  <input
-                    type="range"
-                    min={50}
-                    max={200}
-                    step={1}
-                    value={scaleYVal}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { scaleY: parseInt(e.target.value, 10) })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="insp-row-2col" style={{ marginTop: 6 }}>
-                <div>
-                  <small>Posición X ({offsetXVal > 0 ? `+${offsetXVal}` : offsetXVal}%)</small>
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    step={1}
-                    value={offsetXVal}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { offsetX: parseInt(e.target.value, 10) })
-                    }
-                  />
-                </div>
-                <div>
-                  <small>Posición Y ({offsetYVal > 0 ? `+${offsetYVal}` : offsetYVal}%)</small>
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    step={1}
-                    value={offsetYVal}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { offsetY: parseInt(e.target.value, 10) })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="pill-row" style={{ marginTop: 8 }}>
-                <button
-                  className="mini-action-btn"
-                  onClick={() =>
-                    onUpdateCue(cue.id, {
-                      zoom: 100,
-                      scaleX: 100,
-                      scaleY: 100,
-                      offsetX: 0,
-                      offsetY: 0,
-                      aspectRatio: 'native',
-                      scaleMode: 'fit',
-                    })
-                  }
-                >
-                  <RotateCcw size={11} /> Resetear Zoom y Escala
-                </button>
-                {onApplyGeometryToAllCues && (
-                  <button
-                    className="mini-action-btn"
-                    style={{ borderColor: '#38bdf8', color: '#38bdf8' }}
-                    onClick={() => onApplyGeometryToAllCues(cue)}
-                    title="Copia el Modo de Escalado, Aspect Ratio, Zoom y Fondo Blur de este Cue a todos los vídeos de la escaleta"
-                  >
-                    <CopyCheck size={11} /> Aplicar a Todos los Vídeos
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* 4. Rotation & Flip */}
-            <div className="insp-group">
-              <label className="insp-label">ROTACIÓN Y ESPEJO (GEOMETRÍA)</label>
-              <div className="pill-row">
-                {([0, 90, 180, 270] as const).map((deg) => (
-                  <button
-                    key={deg}
-                    className={`mini-pill ${cue.rotation === deg ? 'selected' : ''}`}
-                    onClick={() => onUpdateCue(cue.id, { rotation: deg })}
-                  >
-                    <RotateCw size={11} /> {deg}°
-                  </button>
-                ))}
-              </div>
-              <div className="pill-row" style={{ marginTop: 6 }}>
-                <button
-                  className={`mini-pill ${cue.flipH ? 'selected' : ''}`}
-                  onClick={() => onUpdateCue(cue.id, { flipH: !cue.flipH })}
-                >
-                  <FlipHorizontal size={12} /> Espejo H
-                </button>
-                <button
-                  className={`mini-pill ${cue.flipV ? 'selected' : ''}`}
-                  onClick={() => onUpdateCue(cue.id, { flipV: !cue.flipV })}
-                >
-                  <FlipVertical size={12} /> Espejo V
-                </button>
-              </div>
-            </div>
-
-            {/* 5. Transition & Fades */}
-            <div className="insp-group">
-              <label className="insp-label">TRANSICIÓN DEL CUE AL HACER TAKE</label>
-              <div className="insp-row-2col">
-                <select
-                  className="insp-select"
-                  value={cue.transitionType}
-                  onChange={(e) =>
-                    onUpdateCue(cue.id, {
-                      transitionType: e.target.value as TransitionType,
-                    })
-                  }
-                >
-                  <option value="cut">Cut (Corte 0s)</option>
-                  <option value="dissolve">Cross Dissolve (Mix)</option>
-                  <option value="dipToBlack">Dip to Black</option>
-                  <option value="wipe">Wipe Horizontal</option>
-                </select>
-                <input
-                  type="number"
-                  className="insp-input"
-                  min={0.1}
-                  max={10}
-                  step={0.1}
-                  value={cue.transitionDuration}
-                  onChange={(e) =>
-                    onUpdateCue(cue.id, {
-                      transitionDuration: Math.max(0.1, parseFloat(e.target.value) || 1),
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="insp-group">
-              <div className="insp-label-flex">
-                <label className="insp-label">OPACIDAD Y FUNDIDOS DE VÍDEO</label>
-                <span>{cue.opacity}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={cue.opacity}
-                onChange={(e) =>
-                  onUpdateCue(cue.id, { opacity: parseInt(e.target.value, 10) })
-                }
-              />
-              <div className="insp-row-2col" style={{ marginTop: 6 }}>
-                <div>
-                  <small>Fade In Vídeo ({cue.videoFadeIn.toFixed(1)}s)</small>
-                  <input
-                    type="range"
-                    min={0}
-                    max={8}
-                    step={0.2}
-                    value={cue.videoFadeIn}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { videoFadeIn: parseFloat(e.target.value) })
-                    }
-                  />
-                </div>
-                <div>
-                  <small>Fade Out Vídeo ({cue.videoFadeOut.toFixed(1)}s)</small>
-                  <input
-                    type="range"
-                    min={0}
-                    max={8}
-                    step={0.2}
-                    value={cue.videoFadeOut}
-                    onChange={(e) =>
-                      onUpdateCue(cue.id, { videoFadeOut: parseFloat(e.target.value) })
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= TAB 4: CODEC & FILE ================= */}
+        {/* ================= TAB 4: CODEC DETECTION & CONVERTIR ================= */}
         {activeTab === 'file' && (
           <div className="insp-section-stack">
             <div className="insp-group">
-              <label className="insp-label">METADATOS FFPROBE</label>
+              <label className="insp-label">DETECCIÓN DE CÓDEC Y FORMATO</label>
               <div className="codec-spec-grid">
+                <div>
+                  <span>Códec de Vídeo</span>
+                  <strong>
+                    {cue.videoCodec.toUpperCase()}
+                    {cue.videoProfile ? ` (${cue.videoProfile})` : ''}
+                  </strong>
+                </div>
                 <div>
                   <span>Resolución</span>
                   <strong>
-                    {cue.width} × {cue.height}
+                    {cue.width} × {cue.height} px
                   </strong>
                 </div>
                 <div>
@@ -751,50 +757,123 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   <strong>{cue.fps} fps</strong>
                 </div>
                 <div>
-                  <span>Códec Vídeo</span>
-                  <strong>{cue.videoCodec.toUpperCase()}</strong>
-                </div>
-                <div>
-                  <span>Contenedor</span>
-                  <strong>{cue.container}</strong>
-                </div>
-                <div>
-                  <span>Audio</span>
+                  <span>Contenedor / Pixel</span>
                   <strong>
-                    {cue.audioCodec.toUpperCase()} ({cue.audioChannels}ch)
+                    {cue.container} • {cue.pixelFormat || 'yuv420p'}
                   </strong>
                 </div>
                 <div>
-                  <span>Tamaño</span>
-                  <strong>{formatBytes(cue.fileSize)}</strong>
+                  <span>Códec de Audio</span>
+                  <strong>
+                    {cue.audioChannels > 0
+                      ? `${cue.audioCodec.toUpperCase()} (${cue.audioChannels}ch @ ${Math.round(
+                          (cue.audioSampleRate || 48000) / 1000
+                        )}kHz)`
+                      : 'Sin Audio'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Tamaño / Bitrate</span>
+                  <strong>
+                    {formatBytes(cue.fileSize)}
+                    {cue.bitrateKbps ? ` (${(cue.bitrateKbps / 1000).toFixed(1)} Mbps)` : ''}
+                  </strong>
                 </div>
               </div>
             </div>
 
+            {/* CONVERTIR Section with Basic Codec Conversion Settings */}
             <div className="insp-group">
-              <label className="insp-label">MOTOR DE REPRODUCCIÓN / PROXY FFMPEG</label>
-              {cue.proxyPath ? (
-                <div className="proxy-ready-box">
-                  <CheckCircle2 size={15} />
+              <label className="insp-label">CONVERTIR</label>
+
+              <div className="convert-settings-stack">
+                <div>
+                  <small className="insp-sub-label">Códec de Destino:</small>
+                  <select
+                    className="insp-select"
+                    value={convCodec}
+                    onChange={(e) =>
+                      setConvCodec(e.target.value as ConvertVideoOptions['targetCodec'])
+                    }
+                  >
+                    <option value="h264">H.264 Broadcast (MP4 • GOP Corto)</option>
+                    <option value="h264_intra">H.264 ALL-I Intra-Frame (Scrubbing Exacto)</option>
+                    <option value="hevc">H.265 / HEVC (MP4 • Alta Eficiencia)</option>
+                    <option value="prores">Apple ProRes 422 (MOV • Producción)</option>
+                  </select>
+                </div>
+
+                <div className="insp-row-2col" style={{ marginTop: 6 }}>
                   <div>
-                    <strong>Proxy H.264 Broadcast Activo</strong>
-                    <small>GOP corto (-g 15) para scrubbing instantáneo</small>
+                    <small className="insp-sub-label">Calidad:</small>
+                    <select
+                      className="insp-select"
+                      value={convQuality}
+                      onChange={(e) =>
+                        setConvQuality(e.target.value as ConvertVideoOptions['quality'])
+                      }
+                    >
+                      <option value="high">Alta (Broadcast)</option>
+                      <option value="medium">Media (Estándar)</option>
+                      <option value="light">Ligera (Proxy)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <small className="insp-sub-label">Resolución:</small>
+                    <select
+                      className="insp-select"
+                      value={convRes}
+                      onChange={(e) =>
+                        setConvRes(e.target.value as ConvertVideoOptions['resolution'])
+                      }
+                    >
+                      <option value="original">Original ({cue.width}×{cue.height})</option>
+                      <option value="1080p">1080p (1920×1080)</option>
+                      <option value="720p">720p (1280×720)</option>
+                    </select>
                   </div>
                 </div>
-              ) : (
-                <button
-                  className="full-width-btn amber-btn"
-                  onClick={() => onOptimizeProxy(cue)}
-                  disabled={cue.proxyProgress !== undefined && cue.proxyProgress < 100}
-                >
-                  <Wand2 size={15} />
-                  <span>
-                    {cue.proxyProgress !== undefined && cue.proxyProgress < 100
-                      ? `Transcodificando Proxy (${cue.proxyProgress}%)...`
-                      : 'Convertir a Proxy H.264 Broadcast (FFmpeg)'}
-                  </span>
-                </button>
+              </div>
+
+              {cue.proxyPath && (
+                <div className="proxy-ready-box" style={{ marginTop: 8 }}>
+                  <CheckCircle2 size={14} />
+                  <div>
+                    <strong>Versión Convertida Activa</strong>
+                    <small className="truncate" style={{ display: 'block', maxWidth: 230 }}>
+                      {cue.proxyPath}
+                    </small>
+                  </div>
+                </div>
               )}
+
+              <button
+                className="full-width-btn primary-convert-btn"
+                style={{ marginTop: 8 }}
+                onClick={() =>
+                  onOptimizeProxy(cue, {
+                    targetCodec: convCodec,
+                    quality: convQuality,
+                    resolution: convRes,
+                  })
+                }
+                disabled={cue.proxyProgress !== undefined && cue.proxyProgress < 100}
+              >
+                <RefreshCw
+                  size={13}
+                  className={
+                    cue.proxyProgress !== undefined && cue.proxyProgress < 100 ? 'spin-anim' : ''
+                  }
+                />
+                <span>
+                  {cue.proxyProgress !== undefined && cue.proxyProgress < 100
+                    ? `Convirtiendo (${cue.proxyProgress}%)...`
+                    : cue.proxyPath
+                    ? 'Volver a Convertir con estos Ajustes'
+                    : 'Convertir Vídeo'}
+                </span>
+              </button>
             </div>
 
             <div className="insp-group">
@@ -805,8 +884,8 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                 style={{ marginTop: 8 }}
                 onClick={() => onRelinkCue(cue)}
               >
-                <Link size={14} />
-                <span>Relinkear / Cambiar Archivo de Vídeo</span>
+                <Link size={13} />
+                <span>Cambiar / Relinkear Archivo</span>
               </button>
             </div>
           </div>
