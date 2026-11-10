@@ -199,6 +199,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
     if (!bgV) return;
     if (!previewCue || !previewCue.bgBlurEnabled) {
       if (bgV.getAttribute('src')) {
+        bgV.pause();
         bgV.removeAttribute('src');
         bgV.load();
       }
@@ -208,10 +209,17 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
     if (url && bgV.getAttribute('data-cue-id') !== previewCue.id) {
       bgV.setAttribute('data-cue-id', previewCue.id);
       bgV.src = url;
-      bgV.currentTime = prvTime;
+      if (prvTime > 0.03) {
+        try {
+          bgV.currentTime = prvTime;
+        } catch {}
+      }
     }
-    bgV.playbackRate = previewCue.playbackRate || 1;
-    if (Math.abs((bgV.currentTime || 0) - prvTime) > 0.06) {
+    const targetRate = previewCue.playbackRate || 1;
+    if (Math.abs(bgV.playbackRate - targetRate) > 0.005) {
+      bgV.playbackRate = targetRate;
+    }
+    if (!bgV.seeking && Math.abs((bgV.currentTime || 0) - prvTime) > 0.65) {
       try {
         bgV.currentTime = prvTime;
       } catch {}
@@ -230,6 +238,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
       const shouldShow = !!(deck.bgBlurEnabled && deck.mediaUrl);
       if (!shouldShow) {
         if (bgV.getAttribute('data-url')) {
+          bgV.pause();
           bgV.removeAttribute('data-url');
           bgV.removeAttribute('src');
           bgV.load();
@@ -239,14 +248,21 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
       if (bgV.getAttribute('data-url') !== deck.mediaUrl && deck.mediaUrl) {
         bgV.setAttribute('data-url', deck.mediaUrl);
         bgV.src = deck.mediaUrl;
-        bgV.currentTime = deck.currentTime || 0;
+        if ((deck.currentTime || 0) > 0.03) {
+          try {
+            bgV.currentTime = deck.currentTime || 0;
+          } catch {}
+        }
       }
-      bgV.playbackRate = deck.playbackRate || 1;
+      const targetRate = deck.playbackRate || 1;
+      if (Math.abs(bgV.playbackRate - targetRate) > 0.005) {
+        bgV.playbackRate = targetRate;
+      }
       if (isFrozen) {
         if (!bgV.paused) bgV.pause();
         return;
       }
-      if (Math.abs((bgV.currentTime || 0) - (deck.currentTime || 0)) > 0.06) {
+      if (!bgV.seeking && Math.abs((bgV.currentTime || 0) - (deck.currentTime || 0)) > 0.65) {
         try {
           bgV.currentTime = deck.currentTime || 0;
         } catch {}

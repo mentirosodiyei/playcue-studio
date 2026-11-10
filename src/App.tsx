@@ -360,20 +360,23 @@ const OperatorConsole: React.FC = () => {
     };
   }, []);
 
-  // Autosave show whenever cues change (including when all cues are deleted)
+  // Autosave show whenever cues change (debounced 800ms so UI interactions never block playback)
   useEffect(() => {
     if (!window.electronAPI || !initialLoadDoneRef.current) return;
-    const schema: ShowFileSchema = {
-      version: '1.4',
-      showName,
-      savedAt: new Date().toISOString(),
-      masterVolume,
-      defaultTransitionType: transitionType,
-      defaultTransitionDuration: transitionDuration,
-      mosaicConfig,
-      cues,
-    };
-    window.electronAPI.autosaveShow(JSON.stringify(schema, null, 2));
+    const timer = setTimeout(() => {
+      const schema: ShowFileSchema = {
+        version: '1.5',
+        showName,
+        savedAt: new Date().toISOString(),
+        masterVolume,
+        defaultTransitionType: transitionType,
+        defaultTransitionDuration: transitionDuration,
+        mosaicConfig,
+        cues,
+      };
+      window.electronAPI?.autosaveShow(JSON.stringify(schema, null, 2));
+    }, 800);
+    return () => clearTimeout(timer);
   }, [cues, showName, masterVolume, transitionType, transitionDuration, mosaicConfig]);
 
   // Load cue into Preview player when previewCueId changes
@@ -383,6 +386,8 @@ const OperatorConsole: React.FC = () => {
     if (!v) return;
 
     if (!cue) {
+      v.pause();
+      v.removeAttribute('data-cue-id');
       v.removeAttribute('src');
       v.load();
       setPrvPlaying(false);
@@ -395,8 +400,13 @@ const OperatorConsole: React.FC = () => {
       v.setAttribute('data-cue-id', cue.id);
       v.src = url;
       v.playbackRate = cue.playbackRate || 1;
-      v.currentTime = cue.inPoint || 0;
-      setPrvTime(cue.inPoint || 0);
+      const inPt = cue.inPoint || 0;
+      if (inPt > 0.02) {
+        try {
+          v.currentTime = inPt;
+        } catch {}
+      }
+      setPrvTime(inPt);
       setPrvPlaying(false);
     }
   }, [previewCueId, cues]);
@@ -507,9 +517,22 @@ const OperatorConsole: React.FC = () => {
       const mediaUrl = toMediaUrl(targetCue.proxyPath || targetCue.filePath);
       if (!mediaUrl) return;
 
-      incomingVideo.src = mediaUrl;
-      incomingVideo.playbackRate = targetCue.playbackRate || 1;
-      incomingVideo.currentTime = targetCue.inPoint || 0;
+      const targetIn = targetCue.inPoint || 0;
+      if (incomingVideo.getAttribute('data-loaded-url') !== mediaUrl) {
+        incomingVideo.setAttribute('data-loaded-url', mediaUrl);
+        incomingVideo.src = mediaUrl;
+        incomingVideo.playbackRate = targetCue.playbackRate || 1;
+        if (targetIn > 0.02) {
+          try {
+            incomingVideo.currentTime = targetIn;
+          } catch {}
+        }
+      } else {
+        incomingVideo.playbackRate = targetCue.playbackRate || 1;
+        try {
+          incomingVideo.currentTime = targetIn;
+        } catch {}
+      }
 
       if (nextDeck === 'A') {
         setDeckACueId(targetCue.id);
@@ -544,12 +567,26 @@ const OperatorConsole: React.FC = () => {
       incomingVideo.play().catch(() => {});
       setPgmPlaying(true);
 
+      const releaseOutgoingDeck = () => {
+        if (outgoingVideo) {
+          outgoingVideo.pause();
+          outgoingVideo.removeAttribute('data-loaded-url');
+          outgoingVideo.removeAttribute('src');
+          outgoingVideo.load();
+        }
+        if (currentActive === 'A') {
+          setDeckACueId(null);
+          deckACueIdRef.current = null;
+        } else {
+          setDeckBCueId(null);
+          deckBCueIdRef.current = null;
+        }
+      };
+
       if (effectiveType === 'cut' || effectiveDur <= 0.05) {
         setTransitionProgress(1);
         transProgressRef.current = 1;
-        if (outgoingVideo) {
-          outgoingVideo.pause();
-        }
+        releaseOutgoingDeck();
       } else {
         setTransitionProgress(0);
         transProgressRef.current = 0;
@@ -563,9 +600,7 @@ const OperatorConsole: React.FC = () => {
           if (p < 1) {
             requestAnimationFrame(stepTransition);
           } else {
-            if (outgoingVideo) {
-              outgoingVideo.pause();
-            }
+            releaseOutgoingDeck();
           }
         };
         requestAnimationFrame(stepTransition);
@@ -574,15 +609,16 @@ const OperatorConsole: React.FC = () => {
     [ensureAudioGraph, transitionType, transitionDuration]
   );
 
-  // Main 60Hz Engine Loop
+  // Main Engine Loop (60Hz envelope & hardware sync, throttled 15Hz React UI state updates)
   useEffect(() => {
     let rafId = 0;
-    const dataL = new Uint8Array(128);
-    const dataR = new Uint8Array(128);
     let peakHoldL = 0;
     let peakHoldR = 0;
+    let lastUiUpdateMs = 0;
+    let lastOutputSyncMs = 0;
+    let lastPgmPlaying = false;
 
-    const tick = () => {
+    const tick = (nowMs: number) => {
       const actDeck = activeDeckRef.current;
       const vA = pgmVideoARef.current;
       const vB = pgmVideoBRef.current;
@@ -590,16 +626,23 @@ const OperatorConsole: React.FC = () => {
       const cueA = cuesRef.current.find((c) => c.id === deckACueIdRef.current);
       const cueB = cuesRef.current.find((c) => c.id === deckBCueIdRef.current);
       const activeCue = actDeck === 'A' ? cueA : cueB;
+      const shouldUpdateUi = nowMs - lastUiUpdateMs >= 65;
 
       if (activeVideo && activeCue) {
         const curT = activeVideo.currentTime || 0;
         const inPt = activeCue.inPoint || 0;
         const outPt = activeCue.outPoint > inPt ? activeCue.outPoint : activeCue.duration;
         const rem = Math.max(0, outPt - curT);
+        const nowPlaying = !activeVideo.paused && !isFrozenRef.current;
 
-        setPgmTime(curT);
-        setPgmRemaining(rem);
-        setPgmPlaying(!activeVideo.paused && !isFrozenRef.current);
+        if (nowPlaying !== lastPgmPlaying) {
+          lastPgmPlaying = nowPlaying;
+          setPgmPlaying(nowPlaying);
+        }
+        if (shouldUpdateUi) {
+          setPgmTime(curT);
+          setPgmRemaining(rem);
+        }
 
         // Check End Action when reaching Out Point
         if (!activeVideo.paused && outPt > 0 && curT >= outPt - 0.04 && !endActionTriggeredRef.current) {
@@ -611,12 +654,14 @@ const OperatorConsole: React.FC = () => {
             endActionTriggeredRef.current = true;
             activeVideo.pause();
             activeVideo.currentTime = Math.max(inPt, outPt - 0.02);
+            lastPgmPlaying = false;
             setPgmPlaying(false);
           } else if (action === 'black') {
             endActionTriggeredRef.current = true;
             activeVideo.pause();
             setIsBlackout(true);
             isBlackoutRef.current = true;
+            lastPgmPlaying = false;
             setPgmPlaying(false);
           } else if (action === 'next') {
             endActionTriggeredRef.current = true;
@@ -626,21 +671,29 @@ const OperatorConsole: React.FC = () => {
               triggerTakeCue(nextCue.id, false);
             } else {
               activeVideo.pause();
+              lastPgmPlaying = false;
               setPgmPlaying(false);
             }
           } else if (action === 'stop') {
             endActionTriggeredRef.current = true;
             activeVideo.pause();
+            activeVideo.removeAttribute('data-loaded-url');
             activeVideo.removeAttribute('src');
             activeVideo.load();
             setProgramCueId(null);
+            lastPgmPlaying = false;
             setPgmPlaying(false);
           }
         }
       } else {
-        setPgmTime(0);
-        setPgmRemaining(0);
-        setPgmPlaying(false);
+        if (lastPgmPlaying) {
+          lastPgmPlaying = false;
+          setPgmPlaying(false);
+        }
+        if (shouldUpdateUi) {
+          setPgmTime(0);
+          setPgmRemaining(0);
+        }
       }
 
       // Compute Deck A & Deck B Envelopes
@@ -659,12 +712,14 @@ const OperatorConsole: React.FC = () => {
       const effectiveGainB = Math.min(1, Math.max(0, envB.audioGain * masterGainVal));
 
       if (vA) {
-        vA.muted = effectiveGainA <= 0.0005;
-        vA.volume = effectiveGainA;
+        const nextMutedA = effectiveGainA <= 0.0005;
+        if (vA.muted !== nextMutedA) vA.muted = nextMutedA;
+        if (Math.abs(vA.volume - effectiveGainA) > 0.004) vA.volume = effectiveGainA;
       }
       if (vB) {
-        vB.muted = effectiveGainB <= 0.0005;
-        vB.volume = effectiveGainB;
+        const nextMutedB = effectiveGainB <= 0.0005;
+        if (vB.muted !== nextMutedB) vB.muted = nextMutedB;
+        if (Math.abs(vB.volume - effectiveGainB) > 0.004) vB.volume = effectiveGainB;
       }
 
       const prvVid = previewVideoRef.current;
@@ -678,105 +733,116 @@ const OperatorConsole: React.FC = () => {
         Math.max(0, prvClipGain * (masterMutedRef.current ? 0 : masterVolRef.current / 100))
       );
       if (prvVid) {
-        prvVid.muted = !prvAuditionRef.current || effectivePrvGain <= 0.0005;
-        prvVid.volume = effectivePrvGain;
+        const nextPrvMuted = !prvAuditionRef.current || effectivePrvGain <= 0.0005;
+        if (prvVid.muted !== nextPrvMuted) prvVid.muted = nextPrvMuted;
+        if (Math.abs(prvVid.volume - effectivePrvGain) > 0.004) prvVid.volume = effectivePrvGain;
       }
 
-      // Update Stereo L/R VU Meters in real time
-      const pgmIsAudible =
-        activeVideo &&
-        !activeVideo.paused &&
-        !isFrozenRef.current &&
-        activeCue &&
-        activeCue.audioChannels > 0 &&
-        Math.max(effectiveGainA, effectiveGainB) > 0.001;
+      // Update Stereo L/R VU Meters (throttled to ~15Hz UI state updates)
+      if (shouldUpdateUi) {
+        lastUiUpdateMs = nowMs;
+        const pgmIsAudible =
+          activeVideo &&
+          !activeVideo.paused &&
+          !isFrozenRef.current &&
+          activeCue &&
+          activeCue.audioChannels > 0 &&
+          Math.max(effectiveGainA, effectiveGainB) > 0.001;
 
-      const prvIsAudible =
-        !pgmIsAudible &&
-        prvVid &&
-        !prvVid.paused &&
-        prvCueObj &&
-        prvCueObj.audioChannels > 0 &&
-        effectivePrvGain > 0.001;
+        const prvIsAudible =
+          !pgmIsAudible &&
+          prvVid &&
+          !prvVid.paused &&
+          prvCueObj &&
+          prvCueObj.audioChannels > 0 &&
+          effectivePrvGain > 0.001;
 
-      if (pgmIsAudible || prvIsAudible) {
-        const activeGain = pgmIsAudible
-          ? Math.max(effectiveGainA, effectiveGainB)
-          : effectivePrvGain;
-        const tNow = performance.now() * 0.012;
-        const baseMeter = Math.min(96, Math.pow(activeGain, 0.58) * 82);
-        const modL = Math.sin(tNow * 1.7) * 4.5 + Math.cos(tNow * 3.1) * 2.8;
-        const modR = Math.cos(tNow * 1.9) * 4.5 + Math.sin(tNow * 2.7) * 2.8;
-        const levelL = Math.min(100, Math.max(4, baseMeter + modL));
-        const levelR = Math.min(100, Math.max(4, baseMeter + modR));
-        peakHoldL = Math.max(levelL, peakHoldL * 0.975);
-        peakHoldR = Math.max(levelR, peakHoldR * 0.975);
-        setVuLevels({ left: levelL, right: levelR, peakL: peakHoldL, peakR: peakHoldR });
-      } else {
-        peakHoldL *= 0.91;
-        peakHoldR *= 0.91;
-        setVuLevels({ left: 0, right: 0, peakL: peakHoldL, peakR: peakHoldR });
+        if (pgmIsAudible || prvIsAudible) {
+          const activeGain = pgmIsAudible
+            ? Math.max(effectiveGainA, effectiveGainB)
+            : effectivePrvGain;
+          const tNow = nowMs * 0.012;
+          const baseMeter = Math.min(96, Math.pow(activeGain, 0.58) * 82);
+          const modL = Math.sin(tNow * 1.7) * 4.5 + Math.cos(tNow * 3.1) * 2.8;
+          const modR = Math.cos(tNow * 1.9) * 4.5 + Math.sin(tNow * 2.7) * 2.8;
+          const levelL = Math.min(100, Math.max(4, baseMeter + modL));
+          const levelR = Math.min(100, Math.max(4, baseMeter + modR));
+          peakHoldL = Math.max(levelL, peakHoldL * 0.92);
+          peakHoldR = Math.max(levelR, peakHoldR * 0.92);
+          setVuLevels({ left: levelL, right: levelR, peakL: peakHoldL, peakR: peakHoldR });
+        } else {
+          peakHoldL *= 0.78;
+          peakHoldR *= 0.78;
+          setVuLevels((prev) =>
+            prev.left === 0 && prev.right === 0 && peakHoldL < 0.5 && peakHoldR < 0.5
+              ? prev
+              : { left: 0, right: 0, peakL: peakHoldL < 0.5 ? 0 : peakHoldL, peakR: peakHoldR < 0.5 ? 0 : peakHoldR }
+          );
+        }
       }
 
       // Build DeckSyncPayloads & Sync with 2nd Display Output Window
-      const payloadA: DeckSyncPayload = cueA
-        ? {
-            cueId: cueA.id,
-            mediaUrl: toMediaUrl(cueA.proxyPath || cueA.filePath),
-            currentTime: vA?.currentTime || 0,
-            isPlaying: !!(vA && !vA.paused && !isFrozenRef.current),
-            playbackRate: cueA.playbackRate || 1,
-            scaleMode: cueA.scaleMode,
-            aspectRatio: cueA.aspectRatio || 'native',
-            zoom: cueA.zoom ?? 100,
-            scaleX: cueA.scaleX ?? 100,
-            scaleY: cueA.scaleY ?? 100,
-            offsetX: cueA.offsetX ?? 0,
-            offsetY: cueA.offsetY ?? 0,
-            videoWidth: cueA.width || 1920,
-            videoHeight: cueA.height || 1080,
-            bgBlurEnabled: !!cueA.bgBlurEnabled,
-            bgBlurAmount: cueA.bgBlurAmount ?? 90,
-            bgBlurBrightness: cueA.bgBlurBrightness ?? 75,
-            bgBlurZoom: cueA.bgBlurZoom ?? 125,
-            opacity: envA.videoOpacity,
-            rotation: cueA.rotation,
-            flipH: cueA.flipH,
-            flipV: cueA.flipV,
-          }
-        : { ...EMPTY_DECK };
+      // Send at 60Hz during active transition (tProg < 1), otherwise 15Hz (every 65ms)
+      const isTransitioning = tProg < 1;
+      if (window.electronAPI && (isTransitioning || nowMs - lastOutputSyncMs >= 65)) {
+        lastOutputSyncMs = nowMs;
+        const payloadA: DeckSyncPayload = cueA
+          ? {
+              cueId: cueA.id,
+              mediaUrl: toMediaUrl(cueA.proxyPath || cueA.filePath),
+              currentTime: vA?.currentTime || 0,
+              isPlaying: !!(vA && !vA.paused && !isFrozenRef.current),
+              playbackRate: cueA.playbackRate || 1,
+              scaleMode: cueA.scaleMode,
+              aspectRatio: cueA.aspectRatio || 'native',
+              zoom: cueA.zoom ?? 100,
+              scaleX: cueA.scaleX ?? 100,
+              scaleY: cueA.scaleY ?? 100,
+              offsetX: cueA.offsetX ?? 0,
+              offsetY: cueA.offsetY ?? 0,
+              videoWidth: cueA.width || 1920,
+              videoHeight: cueA.height || 1080,
+              bgBlurEnabled: !!cueA.bgBlurEnabled,
+              bgBlurAmount: cueA.bgBlurAmount ?? 90,
+              bgBlurBrightness: cueA.bgBlurBrightness ?? 75,
+              bgBlurZoom: cueA.bgBlurZoom ?? 125,
+              opacity: envA.videoOpacity,
+              rotation: cueA.rotation,
+              flipH: cueA.flipH,
+              flipV: cueA.flipV,
+            }
+          : { ...EMPTY_DECK };
 
-      const payloadB: DeckSyncPayload = cueB
-        ? {
-            cueId: cueB.id,
-            mediaUrl: toMediaUrl(cueB.proxyPath || cueB.filePath),
-            currentTime: vB?.currentTime || 0,
-            isPlaying: !!(vB && !vB.paused && !isFrozenRef.current),
-            playbackRate: cueB.playbackRate || 1,
-            scaleMode: cueB.scaleMode,
-            aspectRatio: cueB.aspectRatio || 'native',
-            zoom: cueB.zoom ?? 100,
-            scaleX: cueB.scaleX ?? 100,
-            scaleY: cueB.scaleY ?? 100,
-            offsetX: cueB.offsetX ?? 0,
-            offsetY: cueB.offsetY ?? 0,
-            videoWidth: cueB.width || 1920,
-            videoHeight: cueB.height || 1080,
-            bgBlurEnabled: !!cueB.bgBlurEnabled,
-            bgBlurAmount: cueB.bgBlurAmount ?? 90,
-            bgBlurBrightness: cueB.bgBlurBrightness ?? 75,
-            bgBlurZoom: cueB.bgBlurZoom ?? 125,
-            opacity: envB.videoOpacity,
-            rotation: cueB.rotation,
-            flipH: cueB.flipH,
-            flipV: cueB.flipV,
-          }
-        : { ...EMPTY_DECK };
+        const payloadB: DeckSyncPayload = cueB
+          ? {
+              cueId: cueB.id,
+              mediaUrl: toMediaUrl(cueB.proxyPath || cueB.filePath),
+              currentTime: vB?.currentTime || 0,
+              isPlaying: !!(vB && !vB.paused && !isFrozenRef.current),
+              playbackRate: cueB.playbackRate || 1,
+              scaleMode: cueB.scaleMode,
+              aspectRatio: cueB.aspectRatio || 'native',
+              zoom: cueB.zoom ?? 100,
+              scaleX: cueB.scaleX ?? 100,
+              scaleY: cueB.scaleY ?? 100,
+              offsetX: cueB.offsetX ?? 0,
+              offsetY: cueB.offsetY ?? 0,
+              videoWidth: cueB.width || 1920,
+              videoHeight: cueB.height || 1080,
+              bgBlurEnabled: !!cueB.bgBlurEnabled,
+              bgBlurAmount: cueB.bgBlurAmount ?? 90,
+              bgBlurBrightness: cueB.bgBlurBrightness ?? 75,
+              bgBlurZoom: cueB.bgBlurZoom ?? 125,
+              opacity: envB.videoOpacity,
+              rotation: cueB.rotation,
+              flipH: cueB.flipH,
+              flipV: cueB.flipV,
+            }
+          : { ...EMPTY_DECK };
 
-      deckAOpacityRef.current = payloadA.opacity;
-      deckBOpacityRef.current = payloadB.opacity;
+        deckAOpacityRef.current = payloadA.opacity;
+        deckBOpacityRef.current = payloadB.opacity;
 
-      if (window.electronAPI) {
         syncSeqRef.current += 1;
         const effectiveDuration = activeCue
           ? Math.max(
@@ -808,8 +874,8 @@ const OperatorConsole: React.FC = () => {
         };
         window.electronAPI.syncOutputState(syncState);
 
-        // Update Companion / HTTP telemetry every 10 frames
-        if (syncSeqRef.current % 10 === 0) {
+        // Update Companion / HTTP telemetry every 4 sync ticks (~250ms)
+        if (syncSeqRef.current % 4 === 0) {
           const prvC = cuesRef.current.find((c) => c.id === previewCueId);
           const pgmIdx = activeCue ? cuesRef.current.findIndex((c) => c.id === activeCue.id) + 1 : 0;
           const prvIdx = prvC ? cuesRef.current.findIndex((c) => c.id === prvC.id) + 1 : 0;

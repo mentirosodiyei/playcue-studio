@@ -34,8 +34,14 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Allow instant audio & video playback without Chromium autoplay gesture blocking
+// Allow instant audio & video playback and full GPU hardware decoding without throttling
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 let mainWindow: BrowserWindow | null = null;
 let outputWindows: BrowserWindow[] = [];
@@ -144,7 +150,7 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: true,
+      webSecurity: false,
       backgroundThrottling: false,
     },
   });
@@ -199,6 +205,7 @@ function spawnSingleOutputBrowserWindow(
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,
       backgroundThrottling: false,
     },
   });
@@ -532,7 +539,7 @@ app.whenReady().then(() => {
             'Access-Control-Allow-Headers': '*',
             'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           },
-          data: fs.createReadStream(filePath, { start, end }),
+          data: fs.createReadStream(filePath, { start, end, highWaterMark: 2 * 1024 * 1024 }),
         });
       } else {
         callback({
@@ -545,7 +552,7 @@ app.whenReady().then(() => {
             'Access-Control-Allow-Headers': '*',
             'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           },
-          data: fs.createReadStream(filePath),
+          data: fs.createReadStream(filePath, { highWaterMark: 2 * 1024 * 1024 }),
         });
       }
     } catch {
@@ -630,7 +637,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.5.0');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.5.1');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {
@@ -856,10 +863,10 @@ ipcMain.handle('open-show-file', async () => {
   return { filePath, content };
 });
 
-ipcMain.handle('autosave-show', (_event, showDataJson: string) => {
+ipcMain.handle('autosave-show', async (_event, showDataJson: string) => {
   try {
     const p = path.join(app.getPath('userData'), 'autosave_show.cueshow');
-    fs.writeFileSync(p, showDataJson, 'utf-8');
+    await fs.promises.writeFile(p, showDataJson, 'utf-8');
     return true;
   } catch {
     return false;

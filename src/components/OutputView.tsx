@@ -84,10 +84,184 @@ export const OutputView: React.FC = () => {
   const lastBgUrlA = useRef<string | null>(null);
   const lastBgUrlB = useRef<string | null>(null);
 
+  const lastSeekAtA = useRef<number>(0);
+  const lastSeekAtB = useRef<number>(0);
+  const lastSeekAtBgA = useRef<number>(0);
+  const lastSeekAtBgB = useRef<number>(0);
+  const lastVisualSigRef = useRef<string>('');
+
+  // Sync a video element using broadcast PLL speed-lock (avoids H.264 GOP seek thrashing)
+  const syncVideoElement = (
+    video: HTMLVideoElement | null,
+    deck: DeckSyncPayload,
+    lastUrlRef: React.MutableRefObject<string | null>,
+    lastSeekRef: React.MutableRefObject<number>,
+    frozen: boolean,
+    activeCondition = true
+  ) => {
+    if (!video) return;
+    const effectiveUrl = activeCondition ? deck.mediaUrl : null;
+    const now = performance.now();
+
+    if (effectiveUrl !== lastUrlRef.current) {
+      lastUrlRef.current = effectiveUrl;
+      if (effectiveUrl) {
+        video.src = effectiveUrl;
+        const targetStart = deck.currentTime || 0;
+        if (targetStart > 0.03) {
+          try {
+            video.currentTime = targetStart;
+          } catch {}
+        }
+        lastSeekRef.current = now;
+      } else {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
+    }
+
+    if (!effectiveUrl) return;
+
+    const baseRate = deck.playbackRate || 1;
+
+    if (frozen) {
+      if (!video.paused) video.pause();
+      return;
+    }
+
+    const curT = video.currentTime || 0;
+    const targetT = deck.currentTime || 0;
+    const signedDrift = targetT - curT;
+    const absDrift = Math.abs(signedDrift);
+
+    if (deck.isPlaying) {
+      if (video.paused && video.readyState >= 1) {
+        video.play().catch(() => {});
+      }
+
+      // Only hard-seek on a genuine jump/scrub/loop (> 650ms) and when not already seeking
+      if (absDrift > 0.65 && !video.seeking && now - lastSeekRef.current > 900) {
+        try {
+          video.currentTime = targetT;
+          lastSeekRef.current = now;
+          if (video.playbackRate !== baseRate) {
+            video.playbackRate = baseRate;
+          }
+        } catch {}
+      } else if (absDrift > 0.09 && absDrift <= 0.65 && !video.seeking) {
+        // Gentle PLL speed lock (±2%) so H.264 decoder never flushes its frame queue
+        const nudgedRate = signedDrift > 0 ? baseRate * 1.02 : baseRate * 0.98;
+        if (Math.abs(video.playbackRate - nudgedRate) > 0.005) {
+          video.playbackRate = nudgedRate;
+        }
+      } else if (Math.abs(video.playbackRate - baseRate) > 0.005) {
+        video.playbackRate = baseRate;
+      }
+    } else {
+      if (!video.paused) {
+        video.pause();
+      }
+      if (Math.abs(video.playbackRate - baseRate) > 0.005) {
+        video.playbackRate = baseRate;
+      }
+      if (absDrift > 0.08 && !video.seeking && now - lastSeekRef.current > 250) {
+        try {
+          video.currentTime = targetT;
+          lastSeekRef.current = now;
+        } catch {}
+      }
+    }
+  };
+
   useEffect(() => {
     if (!window.electronAPI) return;
     const unsub = window.electronAPI.onOutputState((incoming: OutputSyncState) => {
-      setState(incoming);
+      // 1. Imperatively sync <video> elements immediately without waiting for React render
+      syncVideoElement(
+        videoARef.current,
+        incoming.deckA,
+        lastUrlA,
+        lastSeekAtA,
+        incoming.isFrozen,
+        true
+      );
+      syncVideoElement(
+        videoBRef.current,
+        incoming.deckB,
+        lastUrlB,
+        lastSeekAtB,
+        incoming.isFrozen,
+        true
+      );
+      syncVideoElement(
+        bgVideoARef.current,
+        incoming.deckA,
+        lastBgUrlA,
+        lastSeekAtBgA,
+        incoming.isFrozen,
+        !!incoming.deckA.bgBlurEnabled
+      );
+      syncVideoElement(
+        bgVideoBRef.current,
+        incoming.deckB,
+        lastBgUrlB,
+        lastSeekAtBgB,
+        incoming.isFrozen,
+        !!incoming.deckB.bgBlurEnabled
+      );
+
+      // 2. Only trigger React state update when visual layout, opacity, or OSD state changes
+      const dA = incoming.deckA;
+      const dB = incoming.deckB;
+      const visualSig = [
+        incoming.activeDeck,
+        incoming.transitionType,
+        Math.round((incoming.transitionProgress ?? 1) * 200),
+        incoming.isBlackout ? 1 : 0,
+        incoming.isFrozen ? 1 : 0,
+        incoming.isTestPattern ? 1 : 0,
+        incoming.showOSD ? 1 : 0,
+        incoming.showOSD ? Math.floor((incoming.remainingTime || 0) * 10) : 0,
+        incoming.showOSD ? incoming.programCueNumber : '',
+        dA.mediaUrl || '',
+        Math.round((dA.opacity ?? 0) * 200),
+        dA.scaleMode,
+        dA.aspectRatio,
+        dA.zoom,
+        dA.scaleX,
+        dA.scaleY,
+        dA.offsetX,
+        dA.offsetY,
+        dA.rotation,
+        dA.flipH ? 1 : 0,
+        dA.flipV ? 1 : 0,
+        dA.bgBlurEnabled ? 1 : 0,
+        dA.bgBlurAmount,
+        dA.bgBlurBrightness,
+        dA.bgBlurZoom,
+        dB.mediaUrl || '',
+        Math.round((dB.opacity ?? 0) * 200),
+        dB.scaleMode,
+        dB.aspectRatio,
+        dB.zoom,
+        dB.scaleX,
+        dB.scaleY,
+        dB.offsetX,
+        dB.offsetY,
+        dB.rotation,
+        dB.flipH ? 1 : 0,
+        dB.flipV ? 1 : 0,
+        dB.bgBlurEnabled ? 1 : 0,
+        dB.bgBlurAmount,
+        dB.bgBlurBrightness,
+        dB.bgBlurZoom,
+      ].join('|');
+
+      if (visualSig !== lastVisualSigRef.current) {
+        lastVisualSigRef.current = visualSig;
+        setState(incoming);
+      }
     });
     return () => unsub();
   }, []);
@@ -102,81 +276,6 @@ export const OutputView: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-
-  // Sync Deck A & Deck B foreground + background blur video elements with sub-frame drift lock
-  useEffect(() => {
-    const syncVideo = (
-      video: HTMLVideoElement | null,
-      deck: DeckSyncPayload,
-      lastUrlRef: React.MutableRefObject<string | null>,
-      frozen: boolean,
-      activeCondition = true
-    ) => {
-      if (!video) return;
-      const effectiveUrl = activeCondition ? deck.mediaUrl : null;
-
-      if (effectiveUrl !== lastUrlRef.current) {
-        lastUrlRef.current = effectiveUrl;
-        if (effectiveUrl) {
-          video.src = effectiveUrl;
-          video.currentTime = deck.currentTime || 0;
-        } else {
-          video.removeAttribute('src');
-          video.load();
-        }
-      }
-
-      if (!effectiveUrl) return;
-
-      if (video.playbackRate !== (deck.playbackRate || 1)) {
-        video.playbackRate = deck.playbackRate || 1;
-      }
-
-      if (frozen) {
-        if (!video.paused) video.pause();
-        return;
-      }
-
-      const drift = Math.abs((video.currentTime || 0) - (deck.currentTime || 0));
-      if (deck.isPlaying) {
-        if (drift > 0.045) {
-          try {
-            video.currentTime = deck.currentTime;
-          } catch {}
-        }
-        if (video.paused) {
-          video.play().catch(() => {});
-        }
-      } else {
-        if (!video.paused) {
-          video.pause();
-        }
-        if (drift > 0.02) {
-          try {
-            video.currentTime = deck.currentTime;
-          } catch {}
-        }
-      }
-    };
-
-    syncVideo(videoARef.current, state.deckA, lastUrlA, state.isFrozen, true);
-    syncVideo(videoBRef.current, state.deckB, lastUrlB, state.isFrozen, true);
-
-    syncVideo(
-      bgVideoARef.current,
-      state.deckA,
-      lastBgUrlA,
-      state.isFrozen,
-      !!state.deckA.bgBlurEnabled
-    );
-    syncVideo(
-      bgVideoBRef.current,
-      state.deckB,
-      lastBgUrlB,
-      state.isFrozen,
-      !!state.deckB.bgBlurEnabled
-    );
-  }, [state]);
 
   const getDeckWrapperStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
     let clipPath = 'none';

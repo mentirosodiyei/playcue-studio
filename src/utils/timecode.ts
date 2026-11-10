@@ -60,10 +60,26 @@ export function formatBytes(bytes: number): string {
 
 export function toMediaUrl(filePath: string | undefined | null): string | null {
   if (!filePath) return null;
-  if (filePath.startsWith('blob:') || filePath.startsWith('http') || filePath.startsWith('data:')) {
+  if (
+    filePath.startsWith('blob:') ||
+    filePath.startsWith('http:') ||
+    filePath.startsWith('https:') ||
+    filePath.startsWith('data:') ||
+    filePath.startsWith('file:')
+  ) {
     return filePath;
   }
-  return `media://local?path=${encodeURIComponent(filePath)}`;
+  const normalized = filePath.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  const encodedPath = segments
+    .map((seg, idx) => {
+      if (idx === 0 && /^[a-zA-Z]:$/.test(seg)) {
+        return seg;
+      }
+      return encodeURIComponent(seg);
+    })
+    .join('/');
+  return encodedPath.startsWith('/') ? `file://${encodedPath}` : `file:///${encodedPath}`;
 }
 
 export function getEffectiveCueDuration(cue: VideoCue | null | undefined): number {
