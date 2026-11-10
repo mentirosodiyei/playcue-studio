@@ -34,6 +34,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Allow instant audio & video playback without Chromium autoplay gesture blocking
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 let mainWindow: BrowserWindow | null = null;
 let outputWindows: BrowserWindow[] = [];
 let currentOutputDisplayId: number | null = null;
@@ -525,6 +528,9 @@ app.whenReady().then(() => {
             'Accept-Ranges': 'bytes',
             'Content-Length': String(chunksize),
             'Content-Type': mimeType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           },
           data: fs.createReadStream(filePath, { start, end }),
         });
@@ -535,6 +541,9 @@ app.whenReady().then(() => {
             'Content-Length': String(totalSize),
             'Accept-Ranges': 'bytes',
             'Content-Type': mimeType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           },
           data: fs.createReadStream(filePath),
         });
@@ -621,7 +630,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.4.0');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.5.0');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {
@@ -725,7 +734,8 @@ ipcMain.handle('relink-video-file', async (_event, oldName: string) => {
 });
 
 ipcMain.handle('probe-media', async (_event, filePath: string) => {
-  return await probeMediaFile(filePath);
+  const cacheDir = path.join(app.getPath('userData'), 'proxy_cache');
+  return await probeMediaFile(filePath, cacheDir);
 });
 
 ipcMain.handle(

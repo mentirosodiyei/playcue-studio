@@ -7,6 +7,7 @@ import ffprobeStatic from 'ffprobe-static';
 
 export interface MediaProbeResult {
   filePath: string;
+  proxyPath?: string;
   fileName: string;
   fileSize: number;
   duration: number;
@@ -18,8 +19,12 @@ export interface MediaProbeResult {
   pixelFormat?: string;
   bitrateKbps?: number;
   audioCodec: string;
+  audioProfile?: string;
   audioChannels: number;
+  audioChannelLayout?: string;
   audioSampleRate: number;
+  audioBitrateKbps?: number;
+  isAudioNativeCompatible: boolean;
   container: string;
   isNativeCompatible: boolean;
   thumbnailDataUrl?: string;
@@ -27,9 +32,20 @@ export interface MediaProbeResult {
 }
 
 export interface ConvertVideoOptions {
-  targetCodec?: 'h264' | 'h264_intra' | 'hevc' | 'prores';
+  targetCodec?: 'copy_video' | 'h264' | 'h264_intra' | 'hevc' | 'prores';
   quality?: 'high' | 'medium' | 'light';
   resolution?: 'original' | '1080p' | '720p';
+  audioCodec?:
+    | 'aac_320'
+    | 'aac_192'
+    | 'pcm_s16le'
+    | 'pcm_s24le'
+    | 'mp3_320'
+    | 'copy_audio'
+    | 'mute_audio';
+  audioSampleRate?: 48000 | 44100;
+  audioChannels?: '2' | '1' | 'original';
+  audioNormalize?: boolean;
 }
 
 const CHROMIUM_NATIVE_VIDEO_CODECS = new Set([
@@ -43,7 +59,20 @@ const CHROMIUM_NATIVE_VIDEO_CODECS = new Set([
   'h265',
 ]);
 
-const CHROMIUM_NATIVE_EXTS = new Set(['.mp4', '.webm', '.m4v', '.mov', '.ogg', '.ogv', '.mkv']);
+// Audio codecs that Chromium HTML5 <video> decodes natively out-of-the-box
+const CHROMIUM_NATIVE_AUDIO_CODECS = new Set([
+  'aac',
+  'mp3',
+  'opus',
+  'vorbis',
+  'flac',
+  'pcm_s16le',
+  'pcm_f32le',
+  'pcm_u8',
+  'none',
+]);
+
+const CHROMIUM_NATIVE_EXTS = new Set(['.mp4', '.webm', '.m4v', '.mov', '.ogg', '.ogv']);
 
 export const VIDEO_EXTENSIONS = new Set([
   '.mp4',
@@ -105,7 +134,78 @@ export function getFfprobePath(): string {
   return 'ffprobe';
 }
 
-export async function probeMediaFile(filePath: string): Promise<MediaProbeResult> {
+/**
+ * Fast universal audio remuxer using bundled FFmpeg codec pack:
+ * Copies compatible video stream (-c:v copy) and decodes any audio codec
+ * (AC-3, E-AC-3, DTS, MP2, PCM 24/32-bit, ALAC, WMA, 5.1 surround) into
+ * standard 320 kbps 48kHz Stereo AAC so Chromium plays audio immediately.
+ */
+export async function ensurePlayableAudioRemux(
+  inputPath: string,
+  cacheDir: string
+): Promise<string | undefined> {
+  try {
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    const stat = fs.statSync(inputPath);
+    const hash = crypto
+      .createHash('md5')
+      .update(inputPath + stat.mtimeMs + '_audioremux_v1')
+      .digest('hex')
+      .slice(0, 10);
+    const baseName = path
+      .basename(inputPath, path.extname(inputPath))
+      .replace(/[^a-zA-Z0-9_-]/g, '_');
+    const outputPath = path.join(cacheDir, `${baseName}_${hash}_audiocompat.mp4`);
+
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
+      return outputPath;
+    }
+
+    return await new Promise((resolve) => {
+      const ffmpeg = getFfmpegPath();
+      const args = [
+        '-y',
+        '-i',
+        inputPath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0',
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '320k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ];
+      const proc = spawn(ffmpeg, args, { windowsHide: true });
+      proc.on('error', () => resolve(undefined));
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
+          resolve(outputPath);
+        } else {
+          resolve(undefined);
+        }
+      });
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export async function probeMediaFile(
+  filePath: string,
+  cacheDir?: string
+): Promise<MediaProbeResult> {
   const fileName = path.basename(filePath);
   const ext = path.extname(filePath).toLowerCase();
   const exists = fs.existsSync(filePath);
@@ -123,6 +223,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
       audioCodec: 'none',
       audioChannels: 0,
       audioSampleRate: 48000,
+      isAudioNativeCompatible: true,
       container: ext.replace('.', ''),
       isNativeCompatible: false,
       exists: false,
@@ -163,6 +264,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
         audioCodec: 'unknown',
         audioChannels: 2,
         audioSampleRate: 48000,
+        isAudioNativeCompatible: true,
         container: ext.replace('.', ''),
         isNativeCompatible: CHROMIUM_NATIVE_EXTS.has(ext),
         exists: true,
@@ -200,12 +302,49 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
         const bitrateKbps = format.bit_rate
           ? Math.round(parseInt(format.bit_rate, 10) / 1000)
           : undefined;
+
         const audioCodec = (aStream.codec_name || 'none').toLowerCase();
+        const audioProfile = aStream.profile || aStream.codec_long_name || '';
         const audioChannels = parseInt(aStream.channels, 10) || 0;
+        const audioChannelLayout =
+          aStream.channel_layout ||
+          (audioChannels === 2
+            ? 'stereo'
+            : audioChannels === 1
+            ? 'mono'
+            : audioChannels === 6
+            ? '5.1'
+            : audioChannels > 0
+            ? `${audioChannels}ch`
+            : 'none');
         const audioSampleRate = parseInt(aStream.sample_rate, 10) || 48000;
+        const audioBitrateKbps = aStream.bit_rate
+          ? Math.round(parseInt(aStream.bit_rate, 10) / 1000)
+          : undefined;
+
+        const isVideoNative =
+          CHROMIUM_NATIVE_VIDEO_CODECS.has(videoCodec) && CHROMIUM_NATIVE_EXTS.has(ext);
+
+        const isAudioNativeCompatible =
+          audioChannels === 0 ||
+          (CHROMIUM_NATIVE_AUDIO_CODECS.has(audioCodec) &&
+            audioChannels <= 2 &&
+            !(ext === '.mov' && audioCodec.startsWith('pcm_')));
+
+        let autoProxyPath: string | undefined = undefined;
+        // If video is H.264/HEVC but audio uses a codec Chromium can't decode natively (e.g. AC3, EAC3, MP2, PCM 24-bit, ALAC, DTS, 5.1, or MKV container),
+        // automatically remux audio to AAC 320k stereo using bundled FFmpeg so audio plays immediately!
+        if (
+          cacheDir &&
+          audioChannels > 0 &&
+          (!isAudioNativeCompatible || ext === '.mkv' || ext === '.ts') &&
+          (videoCodec === 'h264' || videoCodec === 'hevc' || videoCodec === 'h265')
+        ) {
+          autoProxyPath = await ensurePlayableAudioRemux(filePath, cacheDir);
+        }
 
         const isNativeCompatible =
-          CHROMIUM_NATIVE_VIDEO_CODECS.has(videoCodec) && CHROMIUM_NATIVE_EXTS.has(ext);
+          (isVideoNative && isAudioNativeCompatible) || Boolean(autoProxyPath);
 
         const thumbnailDataUrl = await extractThumbnail(
           filePath,
@@ -214,6 +353,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
 
         resolve({
           filePath,
+          proxyPath: autoProxyPath,
           fileName,
           fileSize: stat.size,
           duration,
@@ -225,8 +365,12 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
           pixelFormat,
           bitrateKbps,
           audioCodec,
+          audioProfile,
           audioChannels,
+          audioChannelLayout,
           audioSampleRate,
+          audioBitrateKbps,
+          isAudioNativeCompatible: isAudioNativeCompatible || Boolean(autoProxyPath),
           container: ext.replace('.', '').toUpperCase(),
           isNativeCompatible,
           thumbnailDataUrl,
@@ -245,6 +389,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbeResult
           audioCodec: 'unknown',
           audioChannels: 2,
           audioSampleRate: 48000,
+          isAudioNativeCompatible: true,
           container: ext.replace('.', '').toUpperCase(),
           isNativeCompatible: CHROMIUM_NATIVE_EXTS.has(ext),
           exists: true,
@@ -308,8 +453,14 @@ export async function transcodeToPlayableMp4(
   const targetCodec = options?.targetCodec || 'h264';
   const quality = options?.quality || 'high';
   const resolution = options?.resolution || 'original';
+  const audioCodec = options?.audioCodec || 'aac_320';
+  const audioSampleRate = options?.audioSampleRate || 48000;
+  const audioChannels = options?.audioChannels || '2';
+  const audioNormalize = !!options?.audioNormalize;
 
-  const optSig = `${targetCodec}_${quality}_${resolution}`;
+  const optSig = `${targetCodec}_${quality}_${resolution}_${audioCodec}_${audioSampleRate}_${audioChannels}ch_${
+    audioNormalize ? 'norm' : 'raw'
+  }`;
   const hash = crypto
     .createHash('md5')
     .update(inputPath + fs.statSync(inputPath).mtimeMs + optSig)
@@ -318,7 +469,10 @@ export async function transcodeToPlayableMp4(
   const baseName = path
     .basename(inputPath, path.extname(inputPath))
     .replace(/[^a-zA-Z0-9_-]/g, '_');
-  const extOut = targetCodec === 'prores' ? 'mov' : 'mp4';
+
+  const needsMovContainer =
+    targetCodec === 'prores' || audioCodec === 'pcm_s16le' || audioCodec === 'pcm_s24le';
+  const extOut = needsMovContainer ? 'mov' : 'mp4';
   const outputPath = path.join(cacheDir, `${baseName}_${hash}_${optSig}.${extOut}`);
 
   if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
@@ -331,26 +485,28 @@ export async function transcodeToPlayableMp4(
     const crf = quality === 'high' ? '18' : quality === 'medium' ? '22' : '26';
     const vfArgs: string[] = [];
 
-    if (resolution === '1080p') {
-      vfArgs.push('-vf', 'scale=-2:1080');
-    } else if (resolution === '720p') {
-      vfArgs.push('-vf', 'scale=-2:720');
+    if (targetCodec !== 'copy_video') {
+      if (resolution === '1080p') {
+        vfArgs.push('-vf', 'scale=-2:1080');
+      } else if (resolution === '720p') {
+        vfArgs.push('-vf', 'scale=-2:720');
+      }
     }
 
-    let codecArgs: string[] = [];
-    if (targetCodec === 'prores') {
-      codecArgs = [
+    let videoArgs: string[] = [];
+    if (targetCodec === 'copy_video') {
+      videoArgs = ['-c:v', 'copy'];
+    } else if (targetCodec === 'prores') {
+      videoArgs = [
         '-c:v',
         'prores_ks',
         '-profile:v',
         quality === 'high' ? '2' : '0',
         '-pix_fmt',
         'yuv422p10le',
-        '-c:a',
-        'pcm_s16le',
       ];
     } else if (targetCodec === 'hevc') {
-      codecArgs = [
+      videoArgs = [
         '-c:v',
         'libx265',
         '-preset',
@@ -361,15 +517,9 @@ export async function transcodeToPlayableMp4(
         'yuv420p',
         '-tag:v',
         'hvc1',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '256k',
-        '-movflags',
-        '+faststart',
       ];
     } else if (targetCodec === 'h264_intra') {
-      codecArgs = [
+      videoArgs = [
         '-c:v',
         'libx264',
         '-preset',
@@ -380,15 +530,9 @@ export async function transcodeToPlayableMp4(
         'yuv420p',
         '-g',
         '1',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '256k',
-        '-movflags',
-        '+faststart',
       ];
     } else {
-      codecArgs = [
+      videoArgs = [
         '-c:v',
         'libx264',
         '-preset',
@@ -399,23 +543,51 @@ export async function transcodeToPlayableMp4(
         'yuv420p',
         '-g',
         '15',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '256k',
-        '-ac',
-        '2',
-        '-movflags',
-        '+faststart',
       ];
     }
+
+    // Build Audio Conversion Arguments
+    let audioArgs: string[] = [];
+    if (audioCodec === 'mute_audio') {
+      audioArgs = ['-an'];
+    } else if (audioCodec === 'copy_audio' && !audioNormalize) {
+      audioArgs = ['-c:a', 'copy'];
+    } else {
+      if (audioNormalize) {
+        audioArgs.push('-af', 'loudnorm=I=-16:TP=-1.5:LRA=11');
+      }
+
+      if (audioCodec === 'pcm_s16le') {
+        audioArgs.push('-c:a', 'pcm_s16le');
+      } else if (audioCodec === 'pcm_s24le') {
+        audioArgs.push('-c:a', 'pcm_s24le');
+      } else if (audioCodec === 'mp3_320') {
+        audioArgs.push('-c:a', 'libmp3lame', '-b:a', '320k');
+      } else if (audioCodec === 'aac_192') {
+        audioArgs.push('-c:a', 'aac', '-b:a', '192k');
+      } else {
+        // Default: AAC 320 kbps Broadcast Master
+        audioArgs.push('-c:a', 'aac', '-b:a', '320k');
+      }
+
+      audioArgs.push('-ar', String(audioSampleRate));
+      if (audioChannels === '2') {
+        audioArgs.push('-ac', '2');
+      } else if (audioChannels === '1') {
+        audioArgs.push('-ac', '1');
+      }
+    }
+
+    const containerFlags = extOut === 'mp4' ? ['-movflags', '+faststart'] : [];
 
     const args = [
       '-y',
       '-i',
       inputPath,
       ...vfArgs,
-      ...codecArgs,
+      ...videoArgs,
+      ...audioArgs,
+      ...containerFlags,
       '-progress',
       'pipe:1',
       outputPath,

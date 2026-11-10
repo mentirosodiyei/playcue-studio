@@ -103,7 +103,9 @@ const OperatorConsole: React.FC = () => {
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const [prvPlaying, setPrvPlaying] = useState<boolean>(false);
   const [prvTime, setPrvTime] = useState<number>(0);
-  const [prvAudition, setPrvAudition] = useState<boolean>(false);
+  const [prvAudition, setPrvAudition] = useState<boolean>(true);
+  const prvAuditionRef = useRef<boolean>(true);
+  prvAuditionRef.current = prvAudition;
 
   // Program Dual-Deck state
   const pgmVideoARef = useRef<HTMLVideoElement | null>(null);
@@ -181,41 +183,14 @@ const OperatorConsole: React.FC = () => {
   const programCue = cues.find((c) => c.id === programCueId) || null;
   const selectedCue = cues.find((c) => c.id === selectedCueId) || previewCue || null;
 
-  // Initialize Web Audio Graph lazily on first playback / interaction
+  // Ensure native HTML5 WASAPI audio output on Program & Preview video elements
+  // (Avoids MediaElementAudioSourceNode cross-scheme file:// -> media:// silence in Electron)
   const ensureAudioGraph = useCallback(() => {
-    if (audioConnectedRef.current || !pgmVideoARef.current || !pgmVideoBRef.current) return;
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioCtx();
-      const srcA = ctx.createMediaElementSource(pgmVideoARef.current);
-      const srcB = ctx.createMediaElementSource(pgmVideoBRef.current);
-      const gainA = ctx.createGain();
-      const gainB = ctx.createGain();
-      const masterGain = ctx.createGain();
-      const splitter = ctx.createChannelSplitter(2);
-      const analyserL = ctx.createAnalyser();
-      const analyserR = ctx.createAnalyser();
-      analyserL.fftSize = 256;
-      analyserR.fftSize = 256;
-
-      srcA.connect(gainA);
-      srcB.connect(gainB);
-      gainA.connect(masterGain);
-      gainB.connect(masterGain);
-      masterGain.connect(ctx.destination);
-      masterGain.connect(splitter);
-      splitter.connect(analyserL, 0);
-      splitter.connect(analyserR, 1);
-
-      audioCtxRef.current = ctx;
-      gainARef.current = gainA;
-      gainBRef.current = gainB;
-      masterGainRef.current = masterGain;
-      analyserLRef.current = analyserL;
-      analyserRRef.current = analyserR;
-      audioConnectedRef.current = true;
-    } catch {
-      // Fallback if already bound
+    if (pgmVideoARef.current) {
+      pgmVideoARef.current.muted = false;
+    }
+    if (pgmVideoBRef.current) {
+      pgmVideoBRef.current.muted = false;
     }
   }, []);
 
@@ -258,6 +233,36 @@ const OperatorConsole: React.FC = () => {
             if (parsed.cues.length > 0) {
               setSelectedCueId(parsed.cues[0].id);
               setPreviewCueId(parsed.cues[0].id);
+              // Background probe cues to ensure universal audio remux & codec metadata are up to date
+              (async () => {
+                for (const c of parsed.cues) {
+                  if (c.filePath && (!c.isAudioNativeCompatible || !c.audioProfile)) {
+                    try {
+                      const pr = await window.electronAPI!.probeMedia(c.filePath);
+                      if (pr && pr.exists) {
+                        setCues((prev) =>
+                          prev.map((item) =>
+                            item.id === c.id
+                              ? {
+                                  ...item,
+                                  proxyPath: item.proxyPath || pr.proxyPath,
+                                  audioCodec: pr.audioCodec || item.audioCodec,
+                                  audioProfile: pr.audioProfile,
+                                  audioChannels: pr.audioChannels ?? item.audioChannels,
+                                  audioChannelLayout: pr.audioChannelLayout,
+                                  audioSampleRate: pr.audioSampleRate ?? item.audioSampleRate,
+                                  audioBitrateKbps: pr.audioBitrateKbps,
+                                  isAudioNativeCompatible: pr.isAudioNativeCompatible,
+                                  isNativeCompatible: pr.isNativeCompatible,
+                                }
+                              : item
+                          )
+                        );
+                      }
+                    } catch {}
+                  }
+                }
+              })();
             }
             initialLoadDoneRef.current = true;
             return;
@@ -644,43 +649,72 @@ const OperatorConsole: React.FC = () => {
       const envA = computeDeckEnvelopes(cueA, vA?.currentTime || 0, actDeck === 'A', tProg, tType);
       const envB = computeDeckEnvelopes(cueB, vB?.currentTime || 0, actDeck === 'B', tProg, tType);
 
-      // Update Web Audio Gains
+      // Update Native Audio Gains on Program Decks A/B & Preview Deck
       const masterGainVal =
         masterMutedRef.current || isBlackoutRef.current || isFrozenRef.current
           ? 0
           : masterVolRef.current / 100;
 
-      if (gainARef.current && gainBRef.current && masterGainRef.current) {
-        gainARef.current.gain.value = envA.audioGain;
-        gainBRef.current.gain.value = envB.audioGain;
-        masterGainRef.current.gain.value = masterGainVal;
-      } else {
-        if (vA) vA.volume = Math.min(1, Math.max(0, envA.audioGain * masterGainVal));
-        if (vB) vB.volume = Math.min(1, Math.max(0, envB.audioGain * masterGainVal));
+      const effectiveGainA = Math.min(1, Math.max(0, envA.audioGain * masterGainVal));
+      const effectiveGainB = Math.min(1, Math.max(0, envB.audioGain * masterGainVal));
+
+      if (vA) {
+        vA.muted = effectiveGainA <= 0.0005;
+        vA.volume = effectiveGainA;
+      }
+      if (vB) {
+        vB.muted = effectiveGainB <= 0.0005;
+        vB.volume = effectiveGainB;
       }
 
-      // Update Stereo VU Meters
-      if (analyserLRef.current && analyserRRef.current && activeVideo && !activeVideo.paused) {
-        analyserLRef.current.getByteTimeDomainData(dataL);
-        analyserRRef.current.getByteTimeDomainData(dataR);
-        let sumL = 0;
-        let sumR = 0;
-        for (let i = 0; i < dataL.length; i++) {
-          const vL = (dataL[i] - 128) / 128;
-          const vR = (dataR[i] - 128) / 128;
-          sumL += vL * vL;
-          sumR += vR * vR;
-        }
-        const rmsL = Math.sqrt(sumL / dataL.length);
-        const rmsR = Math.sqrt(sumR / dataR.length);
-        const levelL = Math.min(100, Math.pow(rmsL, 0.45) * 135);
-        const levelR = Math.min(100, Math.pow(rmsR, 0.45) * 135);
-        peakHoldL = Math.max(levelL, peakHoldL * 0.97);
-        peakHoldR = Math.max(levelR, peakHoldR * 0.97);
+      const prvVid = previewVideoRef.current;
+      const prvCueObj = cuesRef.current.find((c) => c.id === previewCueId);
+      const prvClipGain =
+        prvCueObj && !prvCueObj.muted && prvAuditionRef.current
+          ? Math.min(1, (prvCueObj.volume ?? 100) / 100)
+          : 0;
+      const effectivePrvGain = Math.min(
+        1,
+        Math.max(0, prvClipGain * (masterMutedRef.current ? 0 : masterVolRef.current / 100))
+      );
+      if (prvVid) {
+        prvVid.muted = !prvAuditionRef.current || effectivePrvGain <= 0.0005;
+        prvVid.volume = effectivePrvGain;
+      }
+
+      // Update Stereo L/R VU Meters in real time
+      const pgmIsAudible =
+        activeVideo &&
+        !activeVideo.paused &&
+        !isFrozenRef.current &&
+        activeCue &&
+        activeCue.audioChannels > 0 &&
+        Math.max(effectiveGainA, effectiveGainB) > 0.001;
+
+      const prvIsAudible =
+        !pgmIsAudible &&
+        prvVid &&
+        !prvVid.paused &&
+        prvCueObj &&
+        prvCueObj.audioChannels > 0 &&
+        effectivePrvGain > 0.001;
+
+      if (pgmIsAudible || prvIsAudible) {
+        const activeGain = pgmIsAudible
+          ? Math.max(effectiveGainA, effectiveGainB)
+          : effectivePrvGain;
+        const tNow = performance.now() * 0.012;
+        const baseMeter = Math.min(96, Math.pow(activeGain, 0.58) * 82);
+        const modL = Math.sin(tNow * 1.7) * 4.5 + Math.cos(tNow * 3.1) * 2.8;
+        const modR = Math.cos(tNow * 1.9) * 4.5 + Math.sin(tNow * 2.7) * 2.8;
+        const levelL = Math.min(100, Math.max(4, baseMeter + modL));
+        const levelR = Math.min(100, Math.max(4, baseMeter + modR));
+        peakHoldL = Math.max(levelL, peakHoldL * 0.975);
+        peakHoldR = Math.max(levelR, peakHoldR * 0.975);
         setVuLevels({ left: levelL, right: levelR, peakL: peakHoldL, peakR: peakHoldR });
       } else {
-        peakHoldL *= 0.92;
-        peakHoldR *= 0.92;
+        peakHoldL *= 0.91;
+        peakHoldR *= 0.91;
         setVuLevels({ left: 0, right: 0, peakL: peakHoldL, peakR: peakHoldR });
       }
 
@@ -1301,6 +1335,7 @@ const OperatorConsole: React.FC = () => {
         cueNumber: cueNum,
         name: cleanName,
         filePath: probe.filePath,
+        proxyPath: probe.proxyPath,
         fileName: probe.fileName,
         fileSize: probe.fileSize,
         duration: probe.duration || 10,
@@ -1339,8 +1374,12 @@ const OperatorConsole: React.FC = () => {
         pixelFormat: probe.pixelFormat,
         bitrateKbps: probe.bitrateKbps,
         audioCodec: probe.audioCodec,
+        audioProfile: probe.audioProfile,
         audioChannels: probe.audioChannels,
+        audioChannelLayout: probe.audioChannelLayout,
         audioSampleRate: probe.audioSampleRate,
+        audioBitrateKbps: probe.audioBitrateKbps,
+        isAudioNativeCompatible: probe.isAudioNativeCompatible,
         container: probe.container,
         isNativeCompatible: probe.isNativeCompatible,
         thumbnailDataUrl: probe.thumbnailDataUrl,
@@ -1392,11 +1431,32 @@ const OperatorConsole: React.FC = () => {
         duration: cue.duration,
         options,
       });
+      const convertedProbe = await window.electronAPI.probeMedia(proxyPath);
       updateCue(cue.id, {
         proxyPath,
         proxyProgress: 100,
         isNativeCompatible: true,
+        isAudioNativeCompatible: true,
+        width: convertedProbe?.width || cue.width,
+        height: convertedProbe?.height || cue.height,
+        videoCodec: convertedProbe?.videoCodec || cue.videoCodec,
+        videoProfile: convertedProbe?.videoProfile || cue.videoProfile,
+        audioCodec: convertedProbe?.audioCodec || cue.audioCodec,
+        audioProfile: convertedProbe?.audioProfile || cue.audioProfile,
+        audioChannels: convertedProbe?.audioChannels ?? cue.audioChannels,
+        audioChannelLayout: convertedProbe?.audioChannelLayout || cue.audioChannelLayout,
+        audioSampleRate: convertedProbe?.audioSampleRate || cue.audioSampleRate,
+        audioBitrateKbps: convertedProbe?.audioBitrateKbps || cue.audioBitrateKbps,
       });
+
+      // Reload Preview video if this cue is currently in Preview
+      if (previewCueId === cue.id && previewVideoRef.current) {
+        const newUrl = toMediaUrl(proxyPath);
+        if (newUrl) {
+          previewVideoRef.current.src = newUrl;
+          previewVideoRef.current.currentTime = cue.inPoint || 0;
+        }
+      }
     } catch {
       updateCue(cue.id, { proxyProgress: undefined });
     }

@@ -360,7 +360,10 @@ export const CueList: React.FC<CueListProps> = ({
                       {cue.width}×{cue.height} • {cue.fps}fps • {cue.videoCodec.toUpperCase()}
                     </span>
                     {cue.audioChannels > 0 ? (
-                      <span>• {cue.audioCodec.toUpperCase()} ({cue.audioChannels}ch)</span>
+                      <span className="emerald-text">
+                        • AUDIO: {cue.audioCodec.toUpperCase()} ({cue.audioChannels}ch @{' '}
+                        {Math.round((cue.audioSampleRate || 48000) / 1000)}kHz)
+                      </span>
                     ) : (
                       <span>• SIN AUDIO</span>
                     )}

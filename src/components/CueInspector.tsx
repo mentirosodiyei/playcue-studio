@@ -52,10 +52,17 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'video' | 'time' | 'audio' | 'file'>('video');
 
-  // Basic codec conversion settings state
+  // Video & Audio Codec Conversion Settings State
   const [convCodec, setConvCodec] = useState<ConvertVideoOptions['targetCodec']>('h264');
   const [convQuality, setConvQuality] = useState<ConvertVideoOptions['quality']>('high');
   const [convRes, setConvRes] = useState<ConvertVideoOptions['resolution']>('original');
+  const [convAudioCodec, setConvAudioCodec] =
+    useState<ConvertVideoOptions['audioCodec']>('aac_320');
+  const [convAudioSampleRate, setConvAudioSampleRate] =
+    useState<ConvertVideoOptions['audioSampleRate']>(48000);
+  const [convAudioChannels, setConvAudioChannels] =
+    useState<ConvertVideoOptions['audioChannels']>('2');
+  const [convAudioNormalize, setConvAudioNormalize] = useState<boolean>(false);
 
   if (!cue) {
     return (
@@ -98,6 +105,17 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
     const snapped = rawVal >= 96 && rawVal <= 104 ? 100 : rawVal;
     onUpdateCue(cue.id, { volume: snapped });
   };
+
+  const audioSummaryText =
+    cue.audioChannels > 0
+      ? `${cue.audioCodec.toUpperCase()}${
+          cue.audioProfile && cue.audioProfile !== cue.audioCodec ? ` (${cue.audioProfile})` : ''
+        } • ${cue.audioChannels}ch (${
+          cue.audioChannelLayout || (cue.audioChannels === 2 ? 'stereo' : 'mono')
+        }) • ${Math.round((cue.audioSampleRate || 48000) / 1000)} kHz${
+          cue.audioBitrateKbps ? ` • ${cue.audioBitrateKbps} kbps` : ''
+        }`
+      : 'SIN PISTA DE AUDIO (MUDO)';
 
   return (
     <div className="inspector-panel">
@@ -145,7 +163,7 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
       </div>
 
       <div className="inspector-body">
-        {/* ================= TAB 1: VIDEO, AR, NUMERIC GEOMETRY & BLUR AT BOTTOM ================= */}
+        {/* ================= TAB 1: VIDEO, AR, NUMERIC GEOMETRY, CODEC INFO & BLUR AT BOTTOM ================= */}
         {activeTab === 'video' && (
           <div className="insp-section-stack">
             {/* 1. Screen Fit & Aspect Ratio (AR) + Numeric Window Controls */}
@@ -339,6 +357,25 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
               </div>
             </div>
 
+            {/* Video & Audio Codec Info Summary inside Video Tab */}
+            <div className="insp-group">
+              <label className="insp-label">INFORMACIÓN DE CÓDEC (VÍDEO Y AUDIO)</label>
+              <div className="codec-spec-grid">
+                <div>
+                  <span>Códec Vídeo</span>
+                  <strong>
+                    {cue.videoCodec.toUpperCase()} • {cue.width}×{cue.height} @ {cue.fps}fps
+                  </strong>
+                </div>
+                <div>
+                  <span>Códec Audio</span>
+                  <strong className={cue.audioChannels > 0 ? 'emerald-text' : 'text-muted'}>
+                    {audioSummaryText}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
             {/* 2. Rotation & Flip */}
             <div className="insp-group">
               <label className="insp-label">ROTACIÓN Y ESPEJO</label>
@@ -524,7 +561,7 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 2: TIME & TRIM (CLEANED UP) ================= */}
+        {/* ================= TAB 2: TIME & TRIM ================= */}
         {activeTab === 'time' && (
           <div className="insp-section-stack">
             {/* In / Out Trim */}
@@ -647,6 +684,34 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
         {activeTab === 'audio' && (
           <div className="insp-section-stack">
             <div className="insp-group">
+              <label className="insp-label">PISTA DE AUDIO DETECTADA</label>
+              <div className="codec-spec-grid">
+                <div>
+                  <span>Códec de Audio</span>
+                  <strong className={cue.audioChannels > 0 ? 'emerald-text' : ''}>
+                    {cue.audioChannels > 0
+                      ? `${cue.audioCodec.toUpperCase()}${
+                          cue.audioProfile && cue.audioProfile !== cue.audioCodec
+                            ? ` (${cue.audioProfile})`
+                            : ''
+                        }`
+                      : 'Sin Audio'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Canales / Sample Rate</span>
+                  <strong>
+                    {cue.audioChannels > 0
+                      ? `${cue.audioChannels}ch (${cue.audioChannelLayout || 'stereo'}) @ ${Math.round(
+                          (cue.audioSampleRate || 48000) / 1000
+                        )}kHz`
+                      : '0 canales'}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="insp-group">
               <div className="insp-label-flex">
                 <label className="insp-label">GANANCIA DEL CLIP (SNAP EN 0 dB)</label>
                 <span className={`db-readout ${cue.volume === 100 && !cue.muted ? 'zero-db' : ''}`}>
@@ -733,11 +798,11 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 4: CODEC DETECTION & CONVERTIR ================= */}
+        {/* ================= TAB 4: CODEC DETECTION (VIDEO + AUDIO) & CONVERTIR ================= */}
         {activeTab === 'file' && (
           <div className="insp-section-stack">
             <div className="insp-group">
-              <label className="insp-label">DETECCIÓN DE CÓDEC Y FORMATO</label>
+              <label className="insp-label">DETECCIÓN DE CÓDEC DE VÍDEO Y AUDIO</label>
               <div className="codec-spec-grid">
                 <div>
                   <span>Códec de Vídeo</span>
@@ -747,14 +812,34 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   </strong>
                 </div>
                 <div>
-                  <span>Resolución</span>
+                  <span>Resolución y FPS</span>
                   <strong>
-                    {cue.width} × {cue.height} px
+                    {cue.width}×{cue.height} @ {cue.fps}fps
                   </strong>
                 </div>
                 <div>
-                  <span>Frame Rate</span>
-                  <strong>{cue.fps} fps</strong>
+                  <span>Códec de Audio</span>
+                  <strong className={cue.audioChannels > 0 ? 'emerald-text' : 'text-muted'}>
+                    {cue.audioChannels > 0
+                      ? `${cue.audioCodec.toUpperCase()}${
+                          cue.audioProfile && cue.audioProfile !== cue.audioCodec
+                            ? ` (${cue.audioProfile})`
+                            : ''
+                        }`
+                      : 'SIN AUDIO'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Canales / Muestreo Audio</span>
+                  <strong>
+                    {cue.audioChannels > 0
+                      ? `${cue.audioChannels}ch (${
+                          cue.audioChannelLayout || 'stereo'
+                        }) • ${Math.round((cue.audioSampleRate || 48000) / 1000)}kHz${
+                          cue.audioBitrateKbps ? ` • ${cue.audioBitrateKbps}kbps` : ''
+                        }`
+                      : '0 canales'}
+                  </strong>
                 </div>
                 <div>
                   <span>Contenedor / Pixel</span>
@@ -763,32 +848,32 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   </strong>
                 </div>
                 <div>
-                  <span>Códec de Audio</span>
-                  <strong>
-                    {cue.audioChannels > 0
-                      ? `${cue.audioCodec.toUpperCase()} (${cue.audioChannels}ch @ ${Math.round(
-                          (cue.audioSampleRate || 48000) / 1000
-                        )}kHz)`
-                      : 'Sin Audio'}
-                  </strong>
-                </div>
-                <div>
-                  <span>Tamaño / Bitrate</span>
+                  <span>Tamaño / Bitrate Total</span>
                   <strong>
                     {formatBytes(cue.fileSize)}
                     {cue.bitrateKbps ? ` (${(cue.bitrateKbps / 1000).toFixed(1)} Mbps)` : ''}
                   </strong>
                 </div>
               </div>
+
+              <div className="proxy-ready-box" style={{ marginTop: 6 }}>
+                <CheckCircle2 size={14} />
+                <div>
+                  <strong>Pack Universal de Códecs de Audio FFmpeg Activo</strong>
+                  <small>
+                    Decodifica AAC, MP3, PCM 16/24/32-bit, AC-3, E-AC-3, DTS, MP2, ALAC, FLAC, Opus y WMA
+                  </small>
+                </div>
+              </div>
             </div>
 
-            {/* CONVERTIR Section with Basic Codec Conversion Settings */}
+            {/* CONVERTIR Section with Video + Audio Codec Conversion Settings */}
             <div className="insp-group">
-              <label className="insp-label">CONVERTIR</label>
+              <label className="insp-label">CONVERTIR (VÍDEO Y AUDIO)</label>
 
               <div className="convert-settings-stack">
                 <div>
-                  <small className="insp-sub-label">Códec de Destino:</small>
+                  <small className="insp-sub-label">Códec de Vídeo:</small>
                   <select
                     className="insp-select"
                     value={convCodec}
@@ -796,6 +881,9 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                       setConvCodec(e.target.value as ConvertVideoOptions['targetCodec'])
                     }
                   >
+                    <option value="copy_video">
+                      Solo Convertir Audio (Copiar Vídeo intacto - Ultra Rápido)
+                    </option>
                     <option value="h264">H.264 Broadcast (MP4 • GOP Corto)</option>
                     <option value="h264_intra">H.264 ALL-I Intra-Frame (Scrubbing Exacto)</option>
                     <option value="hevc">H.265 / HEVC (MP4 • Alta Eficiencia)</option>
@@ -803,44 +891,117 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                   </select>
                 </div>
 
-                <div className="insp-row-2col" style={{ marginTop: 6 }}>
-                  <div>
-                    <small className="insp-sub-label">Calidad:</small>
-                    <select
-                      className="insp-select"
-                      value={convQuality}
-                      onChange={(e) =>
-                        setConvQuality(e.target.value as ConvertVideoOptions['quality'])
-                      }
-                    >
-                      <option value="high">Alta (Broadcast)</option>
-                      <option value="medium">Media (Estándar)</option>
-                      <option value="light">Ligera (Proxy)</option>
-                    </select>
-                  </div>
+                {convCodec !== 'copy_video' && (
+                  <div className="insp-row-2col" style={{ marginTop: 6 }}>
+                    <div>
+                      <small className="insp-sub-label">Calidad Vídeo:</small>
+                      <select
+                        className="insp-select"
+                        value={convQuality}
+                        onChange={(e) =>
+                          setConvQuality(e.target.value as ConvertVideoOptions['quality'])
+                        }
+                      >
+                        <option value="high">Alta (Broadcast)</option>
+                        <option value="medium">Media (Estándar)</option>
+                        <option value="light">Ligera (Proxy)</option>
+                      </select>
+                    </div>
 
-                  <div>
-                    <small className="insp-sub-label">Resolución:</small>
-                    <select
-                      className="insp-select"
-                      value={convRes}
-                      onChange={(e) =>
-                        setConvRes(e.target.value as ConvertVideoOptions['resolution'])
-                      }
-                    >
-                      <option value="original">Original ({cue.width}×{cue.height})</option>
-                      <option value="1080p">1080p (1920×1080)</option>
-                      <option value="720p">720p (1280×720)</option>
-                    </select>
+                    <div>
+                      <small className="insp-sub-label">Resolución:</small>
+                      <select
+                        className="insp-select"
+                        value={convRes}
+                        onChange={(e) =>
+                          setConvRes(e.target.value as ConvertVideoOptions['resolution'])
+                        }
+                      >
+                        <option value="original">Original ({cue.width}×{cue.height})</option>
+                        <option value="1080p">1080p (1920×1080)</option>
+                        <option value="720p">720p (1280×720)</option>
+                      </select>
+                    </div>
                   </div>
+                )}
+
+                <div style={{ marginTop: 8 }}>
+                  <small className="insp-sub-label">Conversión de Códec de Audio:</small>
+                  <select
+                    className="insp-select"
+                    value={convAudioCodec}
+                    onChange={(e) =>
+                      setConvAudioCodec(e.target.value as ConvertVideoOptions['audioCodec'])
+                    }
+                  >
+                    <option value="aac_320">AAC 320 kbps (Estéreo Broadcast Universal)</option>
+                    <option value="aac_192">AAC 192 kbps (Estándar Compatible)</option>
+                    <option value="pcm_s16le">PCM 16-bit Sin Compresión (WAV / MOV)</option>
+                    <option value="pcm_s24le">PCM 24-bit Studio Master (MOV)</option>
+                    <option value="mp3_320">MP3 320 kbps (CBR Alta Compatibilidad)</option>
+                    <option value="copy_audio">Copiar Audio Original (Pass-through)</option>
+                    <option value="mute_audio">Eliminar Pista de Audio (Dejar Mudo)</option>
+                  </select>
                 </div>
+
+                {convAudioCodec !== 'mute_audio' && convAudioCodec !== 'copy_audio' && (
+                  <>
+                    <div className="insp-row-2col" style={{ marginTop: 6 }}>
+                      <div>
+                        <small className="insp-sub-label">Muestreo Audio:</small>
+                        <select
+                          className="insp-select"
+                          value={convAudioSampleRate}
+                          onChange={(e) =>
+                            setConvAudioSampleRate(
+                              Number(e.target.value) as ConvertVideoOptions['audioSampleRate']
+                            )
+                          }
+                        >
+                          <option value={48000}>48.0 kHz (Broadcast)</option>
+                          <option value={44100}>44.1 kHz</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <small className="insp-sub-label">Canales Audio:</small>
+                        <select
+                          className="insp-select"
+                          value={convAudioChannels}
+                          onChange={(e) =>
+                            setConvAudioChannels(
+                              e.target.value as ConvertVideoOptions['audioChannels']
+                            )
+                          }
+                        >
+                          <option value="2">Estéreo 2.0 (Downmix 5.1→2.0)</option>
+                          <option value="1">Mono 1.0</option>
+                          <option value="original">Original ({cue.audioChannels}ch)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        type="button"
+                        className={`mini-pill ${convAudioNormalize ? 'selected' : ''}`}
+                        style={{ width: '100%', padding: '5px 8px' }}
+                        onClick={() => setConvAudioNormalize((v) => !v)}
+                      >
+                        {convAudioNormalize
+                          ? '✓ Normalizar Volumen Broadcast EBU R128 (-16 LUFS) ACTIVO'
+                          : 'Normalizar Volumen Broadcast EBU R128 (-16 LUFS)'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
               {cue.proxyPath && (
                 <div className="proxy-ready-box" style={{ marginTop: 8 }}>
                   <CheckCircle2 size={14} />
                   <div>
-                    <strong>Versión Convertida Activa</strong>
+                    <strong>Versión Convertida / Audio Optimizado Activo</strong>
                     <small className="truncate" style={{ display: 'block', maxWidth: 230 }}>
                       {cue.proxyPath}
                     </small>
@@ -856,6 +1017,10 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                     targetCodec: convCodec,
                     quality: convQuality,
                     resolution: convRes,
+                    audioCodec: convAudioCodec,
+                    audioSampleRate: convAudioSampleRate,
+                    audioChannels: convAudioChannels,
+                    audioNormalize: convAudioNormalize,
                   })
                 }
                 disabled={cue.proxyProgress !== undefined && cue.proxyProgress < 100}
@@ -869,9 +1034,11 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                 <span>
                   {cue.proxyProgress !== undefined && cue.proxyProgress < 100
                     ? `Convirtiendo (${cue.proxyProgress}%)...`
+                    : convCodec === 'copy_video'
+                    ? 'Convertir Audio Ahora (Rápido)'
                     : cue.proxyPath
-                    ? 'Volver a Convertir con estos Ajustes'
-                    : 'Convertir Vídeo'}
+                    ? 'Volver a Convertir Vídeo / Audio'
+                    : 'Convertir Vídeo y Audio'}
                 </span>
               </button>
             </div>

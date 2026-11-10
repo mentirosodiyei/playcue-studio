@@ -20,9 +20,20 @@ export type CueColor = 'none' | 'red' | 'amber' | 'emerald' | 'blue' | 'purple' 
 export type MosaicMode = 'single' | 'horizontal_2x1' | 'vertical_1x2' | 'mirror_2x';
 
 export interface ConvertVideoOptions {
-  targetCodec?: 'h264' | 'h264_intra' | 'hevc' | 'prores';
+  targetCodec?: 'copy_video' | 'h264' | 'h264_intra' | 'hevc' | 'prores';
   quality?: 'high' | 'medium' | 'light';
   resolution?: 'original' | '1080p' | '720p';
+  audioCodec?:
+    | 'aac_320'
+    | 'aac_192'
+    | 'pcm_s16le'
+    | 'pcm_s24le'
+    | 'mp3_320'
+    | 'copy_audio'
+    | 'mute_audio';
+  audioSampleRate?: 48000 | 44100;
+  audioChannels?: '2' | '1' | 'original';
+  audioNormalize?: boolean;
 }
 
 export interface MosaicSliceViewport {
@@ -99,8 +110,12 @@ export interface VideoCue {
   pixelFormat?: string;
   bitrateKbps?: number;
   audioCodec: string;
+  audioProfile?: string;
   audioChannels: number;
+  audioChannelLayout?: string;
   audioSampleRate: number;
+  audioBitrateKbps?: number;
+  isAudioNativeCompatible?: boolean;
   container: string;
   isNativeCompatible: boolean;
   thumbnailDataUrl?: string;

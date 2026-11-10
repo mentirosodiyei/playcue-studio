@@ -505,8 +505,10 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <span className="cue-num-pill">#{previewCue.cueNumber}</span>
                 <span className="truncate">{previewCue.name}</span>
                 <span className="codec-tag">
-                  {previewCue.width}×{previewCue.height} → Lienzo {totalCanvasWidth}×
-                  {totalCanvasHeight}
+                  {previewCue.videoCodec.toUpperCase()} {previewCue.width}×{previewCue.height} •{' '}
+                  {previewCue.audioChannels > 0
+                    ? `AUDIO ${previewCue.audioCodec.toUpperCase()} ${previewCue.audioChannels}ch`
+                    : 'SIN AUDIO'}
                 </span>
               </>
             ) : (
@@ -835,6 +837,11 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <>
                   <span className="cue-num-pill pgm-pill">#{programCue.cueNumber}</span>
                   <span className="truncate">{programCue.name}</span>
+                  <span className="codec-tag">
+                    {programCue.audioChannels > 0
+                      ? `${programCue.audioCodec.toUpperCase()} ${programCue.audioChannels}ch`
+                      : 'SIN AUDIO'}
+                  </span>
                   <span
                     className="end-action-chip"
                     style={{ borderColor: END_ACTION_LABELS[programCue.endAction].color }}
@@ -890,7 +897,6 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <video
                   ref={pgmVideoARef}
                   playsInline
-                  crossOrigin="anonymous"
                   style={getForegroundVideoStyle({
                     scaleMode: deckA.scaleMode,
                     aspectRatio: deckA.aspectRatio,
@@ -931,7 +937,6 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <video
                   ref={pgmVideoBRef}
                   playsInline
-                  crossOrigin="anonymous"
                   style={getForegroundVideoStyle({
                     scaleMode: deckB.scaleMode,
                     aspectRatio: deckB.aspectRatio,
