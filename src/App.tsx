@@ -21,6 +21,7 @@ import {
   RemoteCommandLog,
   MosaicConfig,
   ConvertVideoOptions,
+  HardwareProfileInfo,
 } from './types/cue';
 import {
   formatTimecode,
@@ -139,6 +140,7 @@ const OperatorConsole: React.FC = () => {
   }>({ oscPort: 51000, httpPort: 51080, ips: ['127.0.0.1'] });
   const [remoteLogs, setRemoteLogs] = useState<RemoteCommandLog[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const [hardwareInfo, setHardwareInfo] = useState<HardwareProfileInfo | null>(null);
 
   // Refs for real-time 60fps loop access
   const cuesRef = useRef<VideoCue[]>(cues);
@@ -219,6 +221,13 @@ const OperatorConsole: React.FC = () => {
     window.electronAPI.getRemoteInfo().then((info) => {
       setRemoteInfo(info);
     });
+
+    if (window.electronAPI.getHardwareInfo) {
+      window.electronAPI
+        .getHardwareInfo()
+        .then((hw) => setHardwareInfo(hw))
+        .catch(() => {});
+    }
 
     window.electronAPI.loadAutosaveShow().then(async (savedJson) => {
       if (savedJson) {
@@ -1814,6 +1823,38 @@ const OperatorConsole: React.FC = () => {
 
         {/* Right Output Display, Mosaic & Companion Controls */}
         <div className="output-display-controls">
+          {hardwareInfo && (
+            <div
+              className="top-btn"
+              style={{ cursor: 'default', opacity: 0.92 }}
+              title={`Prioridad Hardware Activa: ${hardwareInfo.selectedGpuName} (${
+                hardwareInfo.selectedGpuTier === 'discrete'
+                  ? 'GPU Dedicada — Máxima Potencia'
+                  : hardwareInfo.selectedGpuTier === 'integrated'
+                  ? 'GPU Integrada'
+                  : 'Software'
+              })\nReproducción: ${hardwareInfo.playbackDecoderLabel}\nConversión: ${
+                hardwareInfo.preferredEncoderLabel
+              }`}
+            >
+              <span
+                className="tally-dot"
+                style={{
+                  backgroundColor:
+                    hardwareInfo.selectedGpuTier === 'discrete' ? '#10b981' : '#38bdf8',
+                }}
+              />
+              <span>
+                GPU:{' '}
+                {hardwareInfo.selectedGpuName
+                  .replace(/NVIDIA\s+/i, '')
+                  .replace(/AMD\s+/i, '')
+                  .replace(/Intel\(R\)\s+/i, 'Intel ')
+                  .slice(0, 22)}
+              </span>
+            </div>
+          )}
+
           <div className="display-selector-group">
             <Monitor size={14} className="cyan-text" />
             <select
@@ -2131,6 +2172,7 @@ const OperatorConsole: React.FC = () => {
               prvCurrentTime={prvTime}
               totalCanvasWidth={totalCanvasWidth}
               totalCanvasHeight={totalCanvasHeight}
+              hardwareInfo={hardwareInfo}
               onUpdateCue={updateCue}
               onApplyGeometryToAllCues={handleApplyGeometryToAllCues}
               onOptimizeProxy={handleOptimizeProxy}

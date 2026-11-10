@@ -1,7 +1,7 @@
 {
   "name": "cuepro-studio",
   "productName": "CuePro Studio",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "packageManager": "pnpm@9.15.4",
   "description": "Reproductor profesional de vídeo para eventos en directo en Windows (Inspirado en Mitti y PlaybackPro Plus)",
   "author": "CuePro Broadcast Systems",

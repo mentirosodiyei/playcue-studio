@@ -195,6 +195,31 @@ export interface ShowFileSchema {
   cues: VideoCue[];
 }
 
+export interface DetectedGpuDevice {
+  name: string;
+  vendor: 'nvidia' | 'amd' | 'intel' | 'other';
+  tier: 'discrete' | 'integrated' | 'software';
+  vramMB: number;
+  driverVersion?: string;
+  score: number;
+  isSelected: boolean;
+}
+
+export interface HardwareProfileInfo {
+  selectedGpuName: string;
+  selectedGpuTier: 'discrete' | 'integrated' | 'software';
+  selectedGpuVendor: 'nvidia' | 'amd' | 'intel' | 'other';
+  selectedGpuVramMB: number;
+  playbackDecoderLabel: string;
+  preferredH264Encoder: string;
+  preferredHevcEncoder: string;
+  preferredEncoderLabel: string;
+  availableHwEncoders: string[];
+  cpuModel: string;
+  cpuCores: number;
+  gpus: DetectedGpuDevice[];
+}
+
 export interface RemoteCommandLog {
   action: string;
   value?: number | string | boolean;
@@ -207,6 +232,7 @@ declare global {
   interface Window {
     electronAPI?: {
       getDisplays: () => Promise<DisplayInfo[]>;
+      getHardwareInfo: () => Promise<HardwareProfileInfo>;
       getOutputStatus: () => Promise<{
         isOpen: boolean;
         displayId: number | null;

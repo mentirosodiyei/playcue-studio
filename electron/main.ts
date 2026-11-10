@@ -15,6 +15,7 @@ import {
   transcodeToPlayableMp4,
   generateDemoClips,
   expandPathsToVideoFiles,
+  detectHardwareProfile,
   ConvertVideoOptions,
 } from './mediaTools';
 import { RemoteControlServer, LiveShowTelemetry } from './osc';
@@ -34,11 +35,19 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Allow instant audio & video playback and full GPU hardware decoding without throttling
+// Force Windows DXGI / Hybrid GPU (NVIDIA Optimus / AMD Switchable) to always prioritize Discrete High-Performance GPU
+process.env.SHIM_MCCOMPAT = '0x800000001';
+app.commandLine.appendSwitch('force_high_performance_gpu');
+app.commandLine.appendSwitch('gpu-preference', 'high-performance');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
+app.commandLine.appendSwitch(
+  'enable-features',
+  'D3D11VideoDecoder,DirectCompositionVideoOverlays,PlatformHEVCDecoderSupport'
+);
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -562,6 +571,12 @@ app.whenReady().then(() => {
 
   createMainWindow();
 
+  // Warm up hardware GPU detection & FFmpeg hardware encoder priority selection
+  app
+    .getGPUInfo('complete')
+    .then((gpuInfo) => detectHardwareProfile(gpuInfo))
+    .catch(() => detectHardwareProfile());
+
   remoteServer = new RemoteControlServer((cmd) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('remote-command', cmd);
@@ -577,6 +592,15 @@ app.whenReady().then(() => {
 // IPC Handlers
 ipcMain.handle('get-displays', () => {
   return formatDisplays();
+});
+
+ipcMain.handle('get-hardware-info', async () => {
+  try {
+    const gpuInfo = await app.getGPUInfo('complete');
+    return await detectHardwareProfile(gpuInfo);
+  } catch {
+    return await detectHardwareProfile();
+  }
 });
 
 ipcMain.handle('get-output-status', () => {
@@ -637,7 +661,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.5.1');
+    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.6.0');
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {

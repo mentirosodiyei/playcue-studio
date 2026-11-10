@@ -2,8 +2,34 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
+
+export interface DetectedGpuDevice {
+  name: string;
+  vendor: 'nvidia' | 'amd' | 'intel' | 'other';
+  tier: 'discrete' | 'integrated' | 'software';
+  vramMB: number;
+  driverVersion?: string;
+  score: number;
+  isSelected: boolean;
+}
+
+export interface HardwareProfileInfo {
+  selectedGpuName: string;
+  selectedGpuTier: 'discrete' | 'integrated' | 'software';
+  selectedGpuVendor: 'nvidia' | 'amd' | 'intel' | 'other';
+  selectedGpuVramMB: number;
+  playbackDecoderLabel: string;
+  preferredH264Encoder: string;
+  preferredHevcEncoder: string;
+  preferredEncoderLabel: string;
+  availableHwEncoders: string[];
+  cpuModel: string;
+  cpuCores: number;
+  gpus: DetectedGpuDevice[];
+}
 
 export interface MediaProbeResult {
   filePath: string;
@@ -132,6 +158,341 @@ export function getFfprobePath(): string {
     if (fs.existsSync(p)) return p;
   }
   return 'ffprobe';
+}
+
+let cachedHardwareProfile: HardwareProfileInfo | null = null;
+let hardwareDetectionPromise: Promise<HardwareProfileInfo> | null = null;
+
+function classifyGpuDevice(
+  rawName: string,
+  vramBytes = 0,
+  driverVersion = '',
+  vendorId?: number
+): DetectedGpuDevice {
+  const name = (rawName || 'Adaptador Gráfico').trim();
+  const lower = name.toLowerCase();
+  const vramMB = Math.max(0, Math.round(vramBytes / (1024 * 1024)));
+  const vramGB = vramMB / 1024;
+
+  let vendor: DetectedGpuDevice['vendor'] = 'other';
+  if (
+    vendorId === 0x10de ||
+    lower.includes('nvidia') ||
+    lower.includes('geforce') ||
+    lower.includes('quadro') ||
+    lower.includes('rtx') ||
+    lower.includes('gtx') ||
+    lower.includes('tesla')
+  ) {
+    vendor = 'nvidia';
+  } else if (
+    vendorId === 0x1002 ||
+    lower.includes('amd') ||
+    lower.includes('radeon') ||
+    lower.includes('firepro')
+  ) {
+    vendor = 'amd';
+  } else if (
+    vendorId === 0x8086 ||
+    lower.includes('intel') ||
+    lower.includes('iris') ||
+    lower.includes('uhd') ||
+    lower.includes('hd graphics') ||
+    lower.includes('arc')
+  ) {
+    vendor = 'intel';
+  }
+
+  let tier: DetectedGpuDevice['tier'] = 'integrated';
+  let score = 40;
+
+  if (
+    lower.includes('microsoft basic') ||
+    lower.includes('remote desktop') ||
+    lower.includes('parsec') ||
+    lower.includes('virtual')
+  ) {
+    tier = 'software';
+    score = 5;
+  } else if (vendor === 'nvidia') {
+    tier = 'discrete';
+    score = 100 + Math.min(32, vramGB);
+  } else if (vendor === 'amd') {
+    const isDiscreteAmd =
+      lower.includes('radeon rx') ||
+      lower.includes('radeon pro') ||
+      lower.includes('firepro') ||
+      lower.includes('radeon vii') ||
+      /\brx\s?\d{3,4}/i.test(name) ||
+      /\bw\d{4}/i.test(name) ||
+      (vramMB >= 3072 && !lower.includes('radeon(tm) graphics'));
+    if (isDiscreteAmd) {
+      tier = 'discrete';
+      score = 95 + Math.min(32, vramGB);
+    } else {
+      tier = 'integrated';
+      score = 55 + Math.min(8, vramGB);
+    }
+  } else if (vendor === 'intel') {
+    const isDiscreteIntelArc =
+      lower.includes('arc') &&
+      (/\ba[357]\d{2}/i.test(name) || /\bb[57]\d{2}/i.test(name) || vramMB >= 4000);
+    if (isDiscreteIntelArc) {
+      tier = 'discrete';
+      score = 90 + Math.min(24, vramGB);
+    } else {
+      tier = 'integrated';
+      score = 50 + Math.min(8, vramGB);
+    }
+  }
+
+  return {
+    name,
+    vendor,
+    tier,
+    vramMB,
+    driverVersion,
+    score: Math.round(score * 10) / 10,
+    isSelected: false,
+  };
+}
+
+function queryWindowsWmiGpus(): Promise<DetectedGpuDevice[]> {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      resolve([]);
+      return;
+    }
+    const psCmd =
+      'Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,DriverVersion | ConvertTo-Json -Compress';
+    const proc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCmd], {
+      windowsHide: true,
+    });
+    let stdout = '';
+    const timer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {}
+      resolve([]);
+    }, 3000);
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    proc.on('error', () => {
+      clearTimeout(timer);
+      resolve([]);
+    });
+    proc.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          resolve([]);
+          return;
+        }
+        const parsed = JSON.parse(trimmed);
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        const devices: DetectedGpuDevice[] = [];
+        for (const item of arr) {
+          if (item && item.Name) {
+            devices.push(
+              classifyGpuDevice(
+                String(item.Name),
+                Number(item.AdapterRAM) || 0,
+                String(item.DriverVersion || '')
+              )
+            );
+          }
+        }
+        resolve(devices);
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
+function testFfmpegHwEncoder(encoderName: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ffmpeg = getFfmpegPath();
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=black:s=256x256:d=0.04:r=25',
+      '-frames:v',
+      '1',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:v',
+      encoderName,
+      '-f',
+      'null',
+      '-',
+    ];
+    const proc = spawn(ffmpeg, args, { windowsHide: true });
+    const timer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {}
+      resolve(false);
+    }, 2400);
+
+    proc.on('error', () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve(code === 0);
+    });
+  });
+}
+
+export async function detectHardwareProfile(electronGpuInfo?: any): Promise<HardwareProfileInfo> {
+  if (cachedHardwareProfile) return cachedHardwareProfile;
+  if (hardwareDetectionPromise) return hardwareDetectionPromise;
+
+  hardwareDetectionPromise = (async () => {
+    const cpus = os.cpus() || [];
+    const cpuModel = (cpus[0]?.model || 'CPU Multi-Core').trim();
+    const cpuCores = cpus.length || 4;
+
+    const wmiGpus = await queryWindowsWmiGpus();
+    const mergedMap = new Map<string, DetectedGpuDevice>();
+
+    for (const g of wmiGpus) {
+      mergedMap.set(g.name.toLowerCase(), g);
+    }
+
+    if (electronGpuInfo && Array.isArray(electronGpuInfo.gpuDevice)) {
+      for (const dev of electronGpuInfo.gpuDevice) {
+        const rawName =
+          dev.deviceString ||
+          dev.driverDescription ||
+          (dev.vendorId === 0x10de
+            ? 'NVIDIA GPU'
+            : dev.vendorId === 0x1002
+            ? 'AMD Radeon GPU'
+            : dev.vendorId === 0x8086
+            ? 'Intel Graphics GPU'
+            : '');
+        if (!rawName) continue;
+        const key = rawName.toLowerCase().trim();
+        if (!mergedMap.has(key)) {
+          mergedMap.set(
+            key,
+            classifyGpuDevice(
+              rawName,
+              (dev.cudaComputeCapabilityMajor ? 8192 : 0) * 1024 * 1024,
+              dev.driverVersion || '',
+              dev.vendorId
+            )
+          );
+        }
+      }
+    }
+
+    let gpus = Array.from(mergedMap.values()).filter((g) => g.tier !== 'software');
+    if (gpus.length === 0) {
+      gpus = Array.from(mergedMap.values());
+    }
+    if (gpus.length === 0) {
+      gpus = [classifyGpuDevice('GPU Integrada del Sistema', 0, '')];
+    }
+
+    // Sort by power score descending: Discrete GPU always beats Integrated GPU
+    gpus.sort((a, b) => b.score - a.score);
+    gpus[0].isSelected = true;
+    const bestGpu = gpus[0];
+
+    // Probe real working FFmpeg hardware encoders in priority order (Discrete GPU -> Integrated GPU -> CPU)
+    const candidatePairs: { h264: string; hevc: string; label: string; vendor: string }[] = [
+      {
+        h264: 'h264_nvenc',
+        hevc: 'hevc_nvenc',
+        label: 'NVIDIA NVENC (GPU Dedicada)',
+        vendor: 'nvidia',
+      },
+      {
+        h264: 'h264_amf',
+        hevc: 'hevc_amf',
+        label: 'AMD AMF (Aceleración GPU)',
+        vendor: 'amd',
+      },
+      {
+        h264: 'h264_qsv',
+        hevc: 'hevc_qsv',
+        label: 'Intel QuickSync Video (GPU)',
+        vendor: 'intel',
+      },
+    ];
+
+    // Prioritize probing the selected best GPU vendor first
+    candidatePairs.sort((a, b) =>
+      a.vendor === bestGpu.vendor ? -1 : b.vendor === bestGpu.vendor ? 1 : 0
+    );
+
+    const availableHwEncoders: string[] = [];
+    let preferredH264Encoder = 'libx264';
+    let preferredHevcEncoder = 'libx265';
+    let preferredEncoderLabel = `CPU Multi-Core (${cpuCores} hilos)`;
+
+    for (const pair of candidatePairs) {
+      const okH264 = await testFfmpegHwEncoder(pair.h264);
+      if (okH264) {
+        availableHwEncoders.push(pair.h264);
+        const okHevc = await testFfmpegHwEncoder(pair.hevc);
+        if (okHevc) availableHwEncoders.push(pair.hevc);
+
+        if (preferredH264Encoder === 'libx264') {
+          preferredH264Encoder = pair.h264;
+          preferredHevcEncoder = okHevc ? pair.hevc : 'libx265';
+          preferredEncoderLabel = pair.label;
+        }
+      }
+    }
+
+    const tierLabel =
+      bestGpu.tier === 'discrete'
+        ? 'GPU Dedicada • Máxima Prioridad'
+        : bestGpu.tier === 'integrated'
+        ? 'GPU Integrada • Aceleración Hardware'
+        : 'Renderizado Software';
+
+    const playbackDecoderLabel =
+      bestGpu.vendor === 'nvidia'
+        ? `NVDEC / D3D11VA Zero-Copy (${tierLabel})`
+        : bestGpu.vendor === 'amd'
+        ? `AMD D3D11VA Zero-Copy (${tierLabel})`
+        : bestGpu.vendor === 'intel'
+        ? `Intel QSV / D3D11VA Zero-Copy (${tierLabel})`
+        : `D3D11VA Hardware (${tierLabel})`;
+
+    const profile: HardwareProfileInfo = {
+      selectedGpuName: bestGpu.name,
+      selectedGpuTier: bestGpu.tier,
+      selectedGpuVendor: bestGpu.vendor,
+      selectedGpuVramMB: bestGpu.vramMB,
+      playbackDecoderLabel,
+      preferredH264Encoder,
+      preferredHevcEncoder,
+      preferredEncoderLabel,
+      availableHwEncoders,
+      cpuModel,
+      cpuCores,
+      gpus,
+    };
+
+    cachedHardwareProfile = profile;
+    return profile;
+  })();
+
+  return hardwareDetectionPromise;
 }
 
 /**
@@ -480,24 +841,15 @@ export async function transcodeToPlayableMp4(
     return outputPath;
   }
 
-  return new Promise((resolve, reject) => {
-    const ffmpeg = getFfmpegPath();
+  const hwProfile = await detectHardwareProfile();
+
+  const buildVideoEncoderArgs = (useHardwareGpu: boolean): string[] => {
     const crf = quality === 'high' ? '18' : quality === 'medium' ? '22' : '26';
-    const vfArgs: string[] = [];
-
-    if (targetCodec !== 'copy_video') {
-      if (resolution === '1080p') {
-        vfArgs.push('-vf', 'scale=-2:1080');
-      } else if (resolution === '720p') {
-        vfArgs.push('-vf', 'scale=-2:720');
-      }
-    }
-
-    let videoArgs: string[] = [];
     if (targetCodec === 'copy_video') {
-      videoArgs = ['-c:v', 'copy'];
-    } else if (targetCodec === 'prores') {
-      videoArgs = [
+      return ['-c:v', 'copy'];
+    }
+    if (targetCodec === 'prores') {
+      return [
         '-c:v',
         'prores_ks',
         '-profile:v',
@@ -505,8 +857,21 @@ export async function transcodeToPlayableMp4(
         '-pix_fmt',
         'yuv422p10le',
       ];
-    } else if (targetCodec === 'hevc') {
-      videoArgs = [
+    }
+    if (targetCodec === 'hevc') {
+      if (useHardwareGpu && hwProfile.preferredHevcEncoder !== 'libx265') {
+        const enc = hwProfile.preferredHevcEncoder;
+        if (enc === 'hevc_nvenc') {
+          return ['-c:v', 'hevc_nvenc', '-preset', 'p4', '-cq', crf, '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1'];
+        }
+        if (enc === 'hevc_amf') {
+          return ['-c:v', 'hevc_amf', '-quality', 'balanced', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1'];
+        }
+        if (enc === 'hevc_qsv') {
+          return ['-c:v', 'hevc_qsv', '-global_quality', crf, '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1'];
+        }
+      }
+      return [
         '-c:v',
         'libx265',
         '-preset',
@@ -518,103 +883,138 @@ export async function transcodeToPlayableMp4(
         '-tag:v',
         'hvc1',
       ];
-    } else if (targetCodec === 'h264_intra') {
-      videoArgs = [
-        '-c:v',
-        'libx264',
-        '-preset',
-        'superfast',
-        '-crf',
-        crf,
-        '-pix_fmt',
-        'yuv420p',
-        '-g',
-        '1',
-      ];
-    } else {
-      videoArgs = [
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-crf',
-        crf,
-        '-pix_fmt',
-        'yuv420p',
-        '-g',
-        '15',
-      ];
     }
 
-    // Build Audio Conversion Arguments
-    let audioArgs: string[] = [];
-    if (audioCodec === 'mute_audio') {
-      audioArgs = ['-an'];
-    } else if (audioCodec === 'copy_audio' && !audioNormalize) {
-      audioArgs = ['-c:a', 'copy'];
-    } else {
-      if (audioNormalize) {
-        audioArgs.push('-af', 'loudnorm=I=-16:TP=-1.5:LRA=11');
+    const gop = targetCodec === 'h264_intra' ? '1' : '15';
+    if (useHardwareGpu && hwProfile.preferredH264Encoder !== 'libx264') {
+      const enc = hwProfile.preferredH264Encoder;
+      if (enc === 'h264_nvenc') {
+        return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-cq', crf, '-pix_fmt', 'yuv420p', '-g', gop];
       }
-
-      if (audioCodec === 'pcm_s16le') {
-        audioArgs.push('-c:a', 'pcm_s16le');
-      } else if (audioCodec === 'pcm_s24le') {
-        audioArgs.push('-c:a', 'pcm_s24le');
-      } else if (audioCodec === 'mp3_320') {
-        audioArgs.push('-c:a', 'libmp3lame', '-b:a', '320k');
-      } else if (audioCodec === 'aac_192') {
-        audioArgs.push('-c:a', 'aac', '-b:a', '192k');
-      } else {
-        // Default: AAC 320 kbps Broadcast Master
-        audioArgs.push('-c:a', 'aac', '-b:a', '320k');
+      if (enc === 'h264_amf') {
+        return ['-c:v', 'h264_amf', '-quality', 'balanced', '-pix_fmt', 'yuv420p', '-g', gop];
       }
-
-      audioArgs.push('-ar', String(audioSampleRate));
-      if (audioChannels === '2') {
-        audioArgs.push('-ac', '2');
-      } else if (audioChannels === '1') {
-        audioArgs.push('-ac', '1');
+      if (enc === 'h264_qsv') {
+        return ['-c:v', 'h264_qsv', '-global_quality', crf, '-pix_fmt', 'yuv420p', '-g', gop];
       }
     }
 
-    const containerFlags = extOut === 'mp4' ? ['-movflags', '+faststart'] : [];
-
-    const args = [
-      '-y',
-      '-i',
-      inputPath,
-      ...vfArgs,
-      ...videoArgs,
-      ...audioArgs,
-      ...containerFlags,
-      '-progress',
-      'pipe:1',
-      outputPath,
+    return [
+      '-c:v',
+      'libx264',
+      '-preset',
+      targetCodec === 'h264_intra' ? 'superfast' : 'veryfast',
+      '-crf',
+      crf,
+      '-pix_fmt',
+      'yuv420p',
+      '-g',
+      gop,
     ];
+  };
 
-    const proc = spawn(ffmpeg, args, { windowsHide: true });
+  const runFfmpegTranscode = (useHardwareGpu: boolean): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const ffmpeg = getFfmpegPath();
+      const vfArgs: string[] = [];
 
-    proc.stdout.on('data', (chunk) => {
-      const text = chunk.toString();
-      const match = text.match(/out_time_ms=(\d+)/);
-      if (match && durationSec > 0) {
-        const sec = parseInt(match[1], 10) / 1_000_000;
-        const pct = Math.min(99, Math.max(1, Math.round((sec / durationSec) * 100)));
-        onProgress(pct);
+      if (targetCodec !== 'copy_video') {
+        if (resolution === '1080p') {
+          vfArgs.push('-vf', 'scale=-2:1080');
+        } else if (resolution === '720p') {
+          vfArgs.push('-vf', 'scale=-2:720');
+        }
       }
-    });
 
-    proc.on('error', (err) => reject(err));
-    proc.on('close', (code) => {
-      if (code === 0 && fs.existsSync(outputPath)) {
-        onProgress(100);
-        resolve(outputPath);
+      const videoArgs = buildVideoEncoderArgs(useHardwareGpu);
+
+      // Build Audio Conversion Arguments
+      let audioArgs: string[] = [];
+      if (audioCodec === 'mute_audio') {
+        audioArgs = ['-an'];
+      } else if (audioCodec === 'copy_audio' && !audioNormalize) {
+        audioArgs = ['-c:a', 'copy'];
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        if (audioNormalize) {
+          audioArgs.push('-af', 'loudnorm=I=-16:TP=-1.5:LRA=11');
+        }
+
+        if (audioCodec === 'pcm_s16le') {
+          audioArgs.push('-c:a', 'pcm_s16le');
+        } else if (audioCodec === 'pcm_s24le') {
+          audioArgs.push('-c:a', 'pcm_s24le');
+        } else if (audioCodec === 'mp3_320') {
+          audioArgs.push('-c:a', 'libmp3lame', '-b:a', '320k');
+        } else if (audioCodec === 'aac_192') {
+          audioArgs.push('-c:a', 'aac', '-b:a', '192k');
+        } else {
+          // Default: AAC 320 kbps Broadcast Master
+          audioArgs.push('-c:a', 'aac', '-b:a', '320k');
+        }
+
+        audioArgs.push('-ar', String(audioSampleRate));
+        if (audioChannels === '2') {
+          audioArgs.push('-ac', '2');
+        } else if (audioChannels === '1') {
+          audioArgs.push('-ac', '1');
+        }
       }
+
+      const containerFlags = extOut === 'mp4' ? ['-movflags', '+faststart'] : [];
+      const hwDecodeFlags =
+        useHardwareGpu && targetCodec !== 'copy_video' ? ['-hwaccel', 'auto'] : [];
+
+      const args = [
+        '-y',
+        ...hwDecodeFlags,
+        '-i',
+        inputPath,
+        ...vfArgs,
+        ...videoArgs,
+        ...audioArgs,
+        ...containerFlags,
+        '-progress',
+        'pipe:1',
+        outputPath,
+      ];
+
+      const proc = spawn(ffmpeg, args, { windowsHide: true });
+
+      proc.stdout.on('data', (chunk) => {
+        const text = chunk.toString();
+        const match = text.match(/out_time_ms=(\d+)/);
+        if (match && durationSec > 0) {
+          const sec = parseInt(match[1], 10) / 1_000_000;
+          const pct = Math.min(99, Math.max(1, Math.round((sec / durationSec) * 100)));
+          onProgress(pct);
+        }
+      });
+
+      proc.on('error', (err) => reject(err));
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
+          onProgress(100);
+          resolve(outputPath);
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}`));
+        }
+      });
     });
-  });
+
+  const canTryHw =
+    targetCodec !== 'copy_video' &&
+    targetCodec !== 'prores' &&
+    (hwProfile.preferredH264Encoder !== 'libx264' || hwProfile.preferredHevcEncoder !== 'libx265');
+
+  if (canTryHw) {
+    try {
+      return await runFfmpegTranscode(true);
+    } catch {
+      // Automatic fallback to multi-core CPU if hardware encoder rejects resolution/format
+      return await runFfmpegTranscode(false);
+    }
+  }
+  return await runFfmpegTranscode(false);
 }
 
 export async function generateDemoClips(targetDir: string): Promise<string[]> {

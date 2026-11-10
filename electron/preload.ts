@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getDisplays: () => ipcRenderer.invoke('get-displays'),
+  getHardwareInfo: () => ipcRenderer.invoke('get-hardware-info'),
   getOutputStatus: () => ipcRenderer.invoke('get-output-status'),
   setOutputWindow: (payload: {
     open: boolean;

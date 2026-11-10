@@ -21,6 +21,7 @@ import {
   AspectRatioMode,
   TransitionType,
   ConvertVideoOptions,
+  HardwareProfileInfo,
 } from '../types/cue';
 import {
   formatTimecode,
@@ -34,6 +35,7 @@ interface CueInspectorProps {
   prvCurrentTime: number;
   totalCanvasWidth?: number;
   totalCanvasHeight?: number;
+  hardwareInfo?: HardwareProfileInfo | null;
   onUpdateCue: (id: string, patch: Partial<VideoCue>) => void;
   onApplyGeometryToAllCues?: (sourceCue: VideoCue) => void;
   onOptimizeProxy: (cue: VideoCue, options?: ConvertVideoOptions) => void;
@@ -45,6 +47,7 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
   prvCurrentTime,
   totalCanvasWidth = 2560,
   totalCanvasHeight = 1440,
+  hardwareInfo,
   onUpdateCue,
   onApplyGeometryToAllCues,
   onOptimizeProxy,
@@ -801,6 +804,41 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
         {/* ================= TAB 4: CODEC DETECTION (VIDEO + AUDIO) & CONVERTIR ================= */}
         {activeTab === 'file' && (
           <div className="insp-section-stack">
+            {hardwareInfo && (
+              <div className="insp-group">
+                <label className="insp-label">HARDWARE DEL SISTEMA (PRIORIDAD GPU ACTIVA)</label>
+                <div className="proxy-ready-box" style={{ marginBottom: 6 }}>
+                  <CheckCircle2 size={14} />
+                  <div>
+                    <strong>
+                      {hardwareInfo.selectedGpuName}{' '}
+                      <span className="emerald-text">
+                        (
+                        {hardwareInfo.selectedGpuTier === 'discrete'
+                          ? 'GPU Dedicada • Máxima Potencia'
+                          : hardwareInfo.selectedGpuTier === 'integrated'
+                          ? 'GPU Integrada'
+                          : 'Software'}
+                        )
+                      </span>
+                    </strong>
+                    <small style={{ display: 'block' }}>
+                      Reproducción: {hardwareInfo.playbackDecoderLabel} • Conversión:{' '}
+                      {hardwareInfo.preferredEncoderLabel}
+                    </small>
+                    {hardwareInfo.gpus.length > 1 && (
+                      <small style={{ display: 'block', opacity: 0.8, marginTop: 2 }}>
+                        GPUs detectadas ({hardwareInfo.gpus.length}):{' '}
+                        {hardwareInfo.gpus
+                          .map((g) => `${g.name}${g.isSelected ? ' [ACTIVA]' : ''}`)
+                          .join(' / ')}
+                      </small>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="insp-group">
               <label className="insp-label">DETECCIÓN DE CÓDEC DE VÍDEO Y AUDIO</label>
               <div className="codec-spec-grid">
