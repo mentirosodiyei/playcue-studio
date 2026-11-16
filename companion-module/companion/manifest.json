@@ -3,7 +3,7 @@
   "name": "PlayCue Studio",
   "shortname": "playcue",
   "description": "Reproductor profesional de vídeo para eventos en directo",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "license": "MIT",
   "repository": "git+https://github.com/mentirosodiyei/playcue-studio.git",
   "bugs": "https://github.com/mentirosodiyei/playcue-studio/issues",

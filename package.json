@@ -1,7 +1,7 @@
 {
   "name": "playcue-studio",
   "productName": "PlayCue Studio",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "packageManager": "pnpm@9.15.4",
   "description": "Reproductor profesional de vídeo para eventos en directo",
   "author": "PlayCue Broadcast Systems",

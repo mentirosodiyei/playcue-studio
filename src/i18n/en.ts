@@ -331,7 +331,7 @@ export const en: Record<string, string> = {
   "Reiniciar clip de Program al punto IN": "Restart the Program clip from its IN point",
   "Seleccionar Cue anterior / siguiente en escaleta": "Select previous / next Cue in the list",
   "CONTROL REMOTO: BITFOCUS COMPANION (OSC / HTTP) & ATAJOS": "REMOTE CONTROL: BITFOCUS COMPANION (OSC / HTTP) & SHORTCUTS",
-  "MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.6.1)": "NATIVE BITFOCUS COMPANION MODULE (PlayCue Studio v1.6.1)",
+  "MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.6.2)": "NATIVE BITFOCUS COMPANION MODULE (PlayCue Studio v1.6.1)",
   "Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a Programa (PGM con transición de la app), Botón TAKE, Cuenta Atrás con colores, Transiciones, End-Actions y Mosaico 2×1/1×2.": "Includes ready-to-drag presets: launch videos to Preview (PRV), straight to Program (PGM with the app's transition), TAKE button, color-coded countdown, transitions, end actions and 2×1/1×2 mosaic.",
   "Instalar en Companion Local": "Install into local Companion",
   "SERVIDOR OSC UDP (Mitti / PlaybackPro+)": "OSC UDP SERVER (Mitti / PlaybackPro+)",

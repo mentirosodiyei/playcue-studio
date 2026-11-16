@@ -1,10 +1,14 @@
-# PlayCue Studio (v1.6.1)
+# PlayCue Studio (v1.6.2)
 
 Professional video player for live events on Windows, inspired by the workflow and design of **Mitti** and **PlaybackPro Plus**.
 
 The app speaks **English, Spanish and Catalan**. It follows the Windows display language: Catalan systems get Catalan, Spanish systems get Spanish, and any other language gets English.
 
-## What's new in v1.6.1
+## What's new in v1.6.2
+
+- **Automatic updates** (see below), **Catalan / Spanish / English UI**, per-project logs and the installer.
+
+## v1.6.1
 
 - **"Go to" end action**: a cue can jump to a specific cue when it ends (`END ACTION → GO TO`), so you can close loops between several videos (A → B → A…). Remote: `/cue/goto <n>` (OSC/HTTP).
 - **Always the most powerful GPU**: the app detects the installed graphics adapters and uses the dedicated one if present, or the integrated one if it is the only option. It registers itself in *Windows Graphics settings* as "High performance".
