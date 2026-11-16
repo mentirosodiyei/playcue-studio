@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Monitor,
   FolderOpen,
   Save,
   FilePlus,
   Radio,
   Eye,
-  Layers,
+  Settings,
 } from 'lucide-react';
 import {
   VideoCue,
@@ -27,6 +26,15 @@ import {
   formatTimecode,
   toMediaUrl,
 } from './utils/timecode';
+import {
+  attachMeter,
+  readPeaks,
+  peakToLevel,
+  setBoost,
+  setAudioOutput,
+  listAudioOutputs,
+} from './utils/audioMeter';
+import { logEvent } from './utils/log';
 import { OutputView } from './components/OutputView';
 import { DualMonitors } from './components/DualMonitors';
 import { CueList } from './components/CueList';
@@ -72,9 +80,10 @@ export const App: React.FC = () => {
 
 const OperatorConsole: React.FC = () => {
   // Show state
-  const [showName, setShowName] = useState<string>('CuePro Show');
+  const [showName, setShowName] = useState<string>('PlayCue Show');
   const [cues, setCues] = useState<VideoCue[]>([]);
   const [selectedCueId, setSelectedCueId] = useState<string | null>(null);
+  const [multiSelectedIds, setMultiSelectedIds] = useState<string[]>([]);
   const [previewCueId, setPreviewCueId] = useState<string | null>(null);
   const [programCueId, setProgramCueId] = useState<string | null>(null);
   const initialLoadDoneRef = useRef<boolean>(false);
@@ -91,6 +100,16 @@ const OperatorConsole: React.FC = () => {
   const [isSpannedActive, setIsSpannedActive] = useState<boolean>(false);
   const [showOSD, setShowOSD] = useState<boolean>(false);
   const [isMosaicModalOpen, setIsMosaicModalOpen] = useState<boolean>(false);
+
+  // Audio output device ('' = system default, always the base option)
+  const [audioDevices, setAudioDevices] = useState<{ id: string; label: string }[]>([]);
+  const [audioOutputId, setAudioOutputId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('playcue.audioOutputId') || '';
+    } catch {
+      return '';
+    }
+  });
   const [mosaicConfig, setMosaicConfig] = useState<MosaicConfig>({
     mode: 'single',
     display1Id: null,
@@ -168,6 +187,9 @@ const OperatorConsole: React.FC = () => {
   const showOSDRef = useRef<boolean>(showOSD);
   showOSDRef.current = showOSD;
   const syncSeqRef = useRef<number>(0);
+  const transitionRafRef = useRef<number>(0);
+  // True while the current blackout was caused by a cue's "BLACK" end action (cleared by the next TAKE)
+  const blackoutFromEndActionRef = useRef<boolean>(false);
   const endActionTriggeredRef = useRef<boolean>(false);
   const deckAOpacityRef = useRef<number>(1);
   const deckBOpacityRef = useRef<number>(0);
@@ -194,6 +216,109 @@ const OperatorConsole: React.FC = () => {
     if (pgmVideoBRef.current) {
       pgmVideoBRef.current.muted = false;
     }
+  }, []);
+
+  // ---- Audio output device selection ----
+  const applyAudioOutput = useCallback((deviceId: string) => {
+    setAudioOutput(deviceId);
+    // Fallback for elements that are not routed through Web Audio
+    for (const v of [pgmVideoARef.current, pgmVideoBRef.current, previewVideoRef.current]) {
+      const el = v as any;
+      if (el && typeof el.setSinkId === 'function') el.setSinkId(deviceId).catch(() => {});
+    }
+  }, []);
+
+  const handleChangeAudioOutput = (deviceId: string) => {
+    setAudioOutputId(deviceId);
+    try {
+      localStorage.setItem('playcue.audioOutputId', deviceId);
+    } catch {}
+    applyAudioOutput(deviceId);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const list = await listAudioOutputs();
+      if (cancelled) return;
+      setAudioDevices(list);
+      // If the chosen device was unplugged, go back to the system default
+      setAudioOutputId((current) => {
+        if (current && list.length > 0 && !list.some((d) => d.id === current)) {
+          applyAudioOutput('');
+          return '';
+        }
+        return current;
+      });
+    };
+    applyAudioOutput(audioOutputId);
+    refresh();
+    navigator.mediaDevices?.addEventListener?.('devicechange', refresh);
+    return () => {
+      cancelled = true;
+      navigator.mediaDevices?.removeEventListener?.('devicechange', refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- Blackout / Freeze: both PAUSE the program and resume it when released ----
+  // Videos paused by each mode are remembered so that releasing the mode (or pressing PLAY)
+  // continues playback exactly where it stopped.
+  const pausedByBlackoutRef = useRef<HTMLVideoElement[]>([]);
+  const pausedByFreezeRef = useRef<HTMLVideoElement[]>([]);
+
+  const pauseProgramDecks = () => {
+    const paused: HTMLVideoElement[] = [];
+    for (const v of [pgmVideoARef.current, pgmVideoBRef.current]) {
+      if (v && v.getAttribute('src') && !v.paused) {
+        v.pause();
+        paused.push(v);
+      }
+    }
+    return paused;
+  };
+
+  const setBlackout = useCallback((on: boolean, skipResume = false) => {
+    if (on === isBlackoutRef.current) return;
+    logEvent('INFO', 'output', `Blackout ${on ? 'ON' : 'OFF'}`);
+    if (on) {
+      pausedByBlackoutRef.current = pauseProgramDecks();
+    } else {
+      const list = pausedByBlackoutRef.current;
+      pausedByBlackoutRef.current = [];
+      if (!skipResume) list.forEach((v) => v.play().catch(() => {}));
+    }
+    blackoutFromEndActionRef.current = false;
+    isBlackoutRef.current = on;
+    setIsBlackout(on);
+  }, []);
+
+  // FREEZE = freeze-frame: the picture on the OUTPUT is held while the program keeps running
+  // underneath (clock, audio and end actions continue). Releasing it jumps to the live picture.
+  // Unlike PAUSE (and Blackout) it never stops the clip. The second argument is kept only so
+  // existing call sites stay unchanged.
+  const setFreeze = useCallback((on: boolean, _skipResume = false) => {
+    if (on === isFrozenRef.current) return;
+    logEvent('INFO', 'output', `Freeze ${on ? 'ON' : 'OFF'}`);
+    isFrozenRef.current = on;
+    setIsFrozen(on);
+  }, []);
+
+  // Per-project log: tell the main process which project (show) is active, and capture UI errors
+  useEffect(() => {
+    void window.electronAPI?.logSetProject?.(showName);
+  }, [showName]);
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) =>
+      logEvent('ERROR', 'window', `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+    const onRej = (e: PromiseRejectionEvent) =>
+      logEvent('ERROR', 'promise', String((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onRej);
+    return () => {
+      window.removeEventListener('error', onErr);
+      window.removeEventListener('unhandledrejection', onRej);
+    };
   }, []);
 
   // Load displays, remote info, and autosaved show (or first-run bundled demo videos) on startup
@@ -234,7 +359,7 @@ const OperatorConsole: React.FC = () => {
         try {
           const parsed: ShowFileSchema = JSON.parse(savedJson);
           if (parsed && Array.isArray(parsed.cues)) {
-            setShowName(parsed.showName || 'CuePro Show');
+            setShowName(parsed.showName || 'PlayCue Show');
             setCues(parsed.cues);
             if (parsed.mosaicConfig) {
               setMosaicConfig(parsed.mosaicConfig);
@@ -449,6 +574,46 @@ const OperatorConsole: React.FC = () => {
     };
   }, [previewCueId]);
 
+  // Surface decode / load failures (missing codec, deleted file...) on the cue instead of failing silently
+  useEffect(() => {
+    const entries: { el: HTMLVideoElement | null; getId: () => string | null }[] = [
+      { el: pgmVideoARef.current, getId: () => deckACueIdRef.current },
+      { el: pgmVideoBRef.current, getId: () => deckBCueIdRef.current },
+      { el: previewVideoRef.current, getId: () => previewVideoRef.current?.getAttribute('data-cue-id') || null },
+    ];
+    const cleanups: (() => void)[] = [];
+    for (const { el, getId } of entries) {
+      if (!el) continue;
+      const onError = () => {
+        if (!el.getAttribute('src')) return; // unloading a deck triggers a benign error
+        const id = getId();
+        if (!id) return;
+        const code = el.error?.code ?? 0;
+        const msg = `No se pudo reproducir este vídeo (código ${code}${
+          el.error?.message ? `: ${el.error.message}` : ''
+        }). Prueba a convertirlo a H.264.`;
+        setCues((prev) => prev.map((c) => (c.id === id ? { ...c, playbackError: msg } : c)));
+        const failing = cuesRef.current.find((c) => c.id === id);
+        logEvent('ERROR', 'video', `${failing?.name ?? id} (${failing?.filePath ?? '?'}): ${msg}`);
+      };
+      const onLoaded = () => {
+        const id = getId();
+        if (!id) return;
+        const cue = cuesRef.current.find((c) => c.id === id);
+        if (cue?.playbackError) {
+          setCues((prev) => prev.map((c) => (c.id === id ? { ...c, playbackError: undefined } : c)));
+        }
+      };
+      el.addEventListener('error', onError);
+      el.addEventListener('loadeddata', onLoaded);
+      cleanups.push(() => {
+        el.removeEventListener('error', onError);
+        el.removeEventListener('loadeddata', onLoaded);
+      });
+    }
+    return () => cleanups.forEach((fn) => fn());
+  }, []);
+
   // Compute envelope for a deck (video opacity & audio gain)
   const computeDeckEnvelopes = useCallback(
     (
@@ -510,6 +675,7 @@ const OperatorConsole: React.FC = () => {
     (targetCueId: string, overrideCut = false) => {
       const targetCue = cuesRef.current.find((c) => c.id === targetCueId);
       if (!targetCue) return;
+      logEvent('INFO', 'take', `TAKE: ${targetCue.name}${overrideCut ? ' (cut)' : ''}`);
 
       ensureAudioGraph();
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -554,11 +720,23 @@ const OperatorConsole: React.FC = () => {
       setActiveDeck(nextDeck);
       activeDeckRef.current = nextDeck;
       setProgramCueId(targetCue.id);
+      // A new TAKE supersedes any freeze / blackout pause that was holding the old program
+      pausedByFreezeRef.current = [];
+      pausedByBlackoutRef.current = [];
       setIsFrozen(false);
       isFrozenRef.current = false;
       setIsTestPattern(false);
       isTestPatternRef.current = false;
       endActionTriggeredRef.current = false;
+
+      // A blackout produced by a "BLACK" end action ends as soon as the next cue is taken
+      if (blackoutFromEndActionRef.current) {
+        blackoutFromEndActionRef.current = false;
+        if (isBlackoutRef.current) {
+          setIsBlackout(false);
+          isBlackoutRef.current = false;
+        }
+      }
 
       // Auto-advance Preview to the next cue in the Cue List
       const idx = cuesRef.current.findIndex((c) => c.id === targetCue.id);
@@ -567,6 +745,9 @@ const OperatorConsole: React.FC = () => {
         setPreviewCueId(nextInList.id);
         setSelectedCueId(nextInList.id);
       }
+
+      // Cancel any transition still running so a stale loop can't release the new incoming deck
+      cancelAnimationFrame(transitionRafRef.current);
 
       const effectiveType = overrideCut ? 'cut' : targetCue.transitionType || transitionType;
       const effectiveDur = overrideCut ? 0 : targetCue.transitionDuration || transitionDuration;
@@ -607,12 +788,12 @@ const OperatorConsole: React.FC = () => {
           setTransitionProgress(p);
           transProgressRef.current = p;
           if (p < 1) {
-            requestAnimationFrame(stepTransition);
+            transitionRafRef.current = requestAnimationFrame(stepTransition);
           } else {
             releaseOutgoingDeck();
           }
         };
-        requestAnimationFrame(stepTransition);
+        transitionRafRef.current = requestAnimationFrame(stepTransition);
       }
     },
     [ensureAudioGraph, transitionType, transitionDuration]
@@ -623,6 +804,8 @@ const OperatorConsole: React.FC = () => {
     let rafId = 0;
     let peakHoldL = 0;
     let peakHoldR = 0;
+    let smoothL = 0;
+    let smoothR = 0;
     let lastUiUpdateMs = 0;
     let lastOutputSyncMs = 0;
     let lastPgmPlaying = false;
@@ -642,7 +825,7 @@ const OperatorConsole: React.FC = () => {
         const inPt = activeCue.inPoint || 0;
         const outPt = activeCue.outPoint > inPt ? activeCue.outPoint : activeCue.duration;
         const rem = Math.max(0, outPt - curT);
-        const nowPlaying = !activeVideo.paused && !isFrozenRef.current;
+        const nowPlaying = !activeVideo.paused;
 
         if (nowPlaying !== lastPgmPlaying) {
           lastPgmPlaying = nowPlaying;
@@ -654,11 +837,20 @@ const OperatorConsole: React.FC = () => {
         }
 
         // Check End Action when reaching Out Point
-        if (!activeVideo.paused && outPt > 0 && curT >= outPt - 0.04 && !endActionTriggeredRef.current) {
+        // `ended` covers files whose real stream is slightly shorter than the probed duration
+        const reachedEnd = activeVideo.ended || curT >= outPt - 0.04;
+        if (
+          (!activeVideo.paused || activeVideo.ended) &&
+          outPt > 0 &&
+          reachedEnd &&
+          !endActionTriggeredRef.current
+        ) {
           const action = activeCue.endAction;
           if (action === 'loop') {
-            activeVideo.currentTime = inPt;
-            activeVideo.play().catch(() => {});
+            if (!activeVideo.seeking) {
+              activeVideo.currentTime = inPt;
+              activeVideo.play().catch(() => {});
+            }
           } else if (action === 'hold') {
             endActionTriggeredRef.current = true;
             activeVideo.pause();
@@ -668,8 +860,8 @@ const OperatorConsole: React.FC = () => {
           } else if (action === 'black') {
             endActionTriggeredRef.current = true;
             activeVideo.pause();
-            setIsBlackout(true);
-            isBlackoutRef.current = true;
+            setBlackout(true);
+            blackoutFromEndActionRef.current = true;
             lastPgmPlaying = false;
             setPgmPlaying(false);
           } else if (action === 'next') {
@@ -680,6 +872,20 @@ const OperatorConsole: React.FC = () => {
               triggerTakeCue(nextCue.id, false);
             } else {
               activeVideo.pause();
+              lastPgmPlaying = false;
+              setPgmPlaying(false);
+            }
+          } else if (action === 'goto') {
+            endActionTriggeredRef.current = true;
+            const target = activeCue.gotoCueId
+              ? cuesRef.current.find((c) => c.id === activeCue.gotoCueId)
+              : undefined;
+            if (target) {
+              triggerTakeCue(target.id, false);
+            } else {
+              // No (valid) destination: behave like HOLD
+              activeVideo.pause();
+              activeVideo.currentTime = Math.max(inPt, outPt - 0.02);
               lastPgmPlaying = false;
               setPgmPlaying(false);
             }
@@ -713,12 +919,19 @@ const OperatorConsole: React.FC = () => {
 
       // Update Native Audio Gains on Program Decks A/B & Preview Deck
       const masterGainVal =
-        masterMutedRef.current || isBlackoutRef.current || isFrozenRef.current
+        masterMutedRef.current || isBlackoutRef.current
           ? 0
           : masterVolRef.current / 100;
 
-      const effectiveGainA = Math.min(1, Math.max(0, envA.audioGain * masterGainVal));
-      const effectiveGainB = Math.min(1, Math.max(0, envB.audioGain * masterGainVal));
+      // Element volume is capped at 1.0; anything above 0 dB is applied by the Web Audio boost stage
+      const rawGainA = Math.max(0, envA.audioGain * masterGainVal);
+      const rawGainB = Math.max(0, envB.audioGain * masterGainVal);
+      const effectiveGainA = Math.min(1, rawGainA);
+      const effectiveGainB = Math.min(1, rawGainB);
+      attachMeter(vA);
+      attachMeter(vB);
+      setBoost(vA, rawGainA);
+      setBoost(vB, rawGainB);
 
       if (vA) {
         const nextMutedA = effectiveGainA <= 0.0005;
@@ -735,12 +948,15 @@ const OperatorConsole: React.FC = () => {
       const prvCueObj = cuesRef.current.find((c) => c.id === previewCueId);
       const prvClipGain =
         prvCueObj && !prvCueObj.muted && prvAuditionRef.current
-          ? Math.min(1, (prvCueObj.volume ?? 100) / 100)
+          ? (prvCueObj.volume ?? 100) / 100
           : 0;
-      const effectivePrvGain = Math.min(
-        1,
-        Math.max(0, prvClipGain * (masterMutedRef.current ? 0 : masterVolRef.current / 100))
+      const rawPrvGain = Math.max(
+        0,
+        prvClipGain * (masterMutedRef.current ? 0 : masterVolRef.current / 100)
       );
+      const effectivePrvGain = Math.min(1, rawPrvGain);
+      attachMeter(prvVid);
+      setBoost(prvVid, rawPrvGain);
       if (prvVid) {
         const nextPrvMuted = !prvAuditionRef.current || effectivePrvGain <= 0.0005;
         if (prvVid.muted !== nextPrvMuted) prvVid.muted = nextPrvMuted;
@@ -750,44 +966,44 @@ const OperatorConsole: React.FC = () => {
       // Update Stereo L/R VU Meters (throttled to ~15Hz UI state updates)
       if (shouldUpdateUi) {
         lastUiUpdateMs = nowMs;
-        const pgmIsAudible =
-          activeVideo &&
-          !activeVideo.paused &&
-          !isFrozenRef.current &&
-          activeCue &&
-          activeCue.audioChannels > 0 &&
-          Math.max(effectiveGainA, effectiveGainB) > 0.001;
+        // Real levels measured with Web Audio analysers on the actual playing elements
+        attachMeter(vA);
+        attachMeter(vB);
+        attachMeter(prvVid);
 
-        const prvIsAudible =
-          !pgmIsAudible &&
-          prvVid &&
-          !prvVid.paused &&
-          prvCueObj &&
-          prvCueObj.audioChannels > 0 &&
-          effectivePrvGain > 0.001;
-
-        if (pgmIsAudible || prvIsAudible) {
-          const activeGain = pgmIsAudible
-            ? Math.max(effectiveGainA, effectiveGainB)
-            : effectivePrvGain;
-          const tNow = nowMs * 0.012;
-          const baseMeter = Math.min(96, Math.pow(activeGain, 0.58) * 82);
-          const modL = Math.sin(tNow * 1.7) * 4.5 + Math.cos(tNow * 3.1) * 2.8;
-          const modR = Math.cos(tNow * 1.9) * 4.5 + Math.sin(tNow * 2.7) * 2.8;
-          const levelL = Math.min(100, Math.max(4, baseMeter + modL));
-          const levelR = Math.min(100, Math.max(4, baseMeter + modR));
-          peakHoldL = Math.max(levelL, peakHoldL * 0.92);
-          peakHoldR = Math.max(levelR, peakHoldR * 0.92);
-          setVuLevels({ left: levelL, right: levelR, peakL: peakHoldL, peakR: peakHoldR });
-        } else {
-          peakHoldL *= 0.78;
-          peakHoldR *= 0.78;
-          setVuLevels((prev) =>
-            prev.left === 0 && prev.right === 0 && peakHoldL < 0.5 && peakHoldR < 0.5
-              ? prev
-              : { left: 0, right: 0, peakL: peakHoldL < 0.5 ? 0 : peakHoldL, peakR: peakHoldR < 0.5 ? 0 : peakHoldR }
-          );
+        const readPlaying = (v: HTMLVideoElement | null, cue: VideoCue | undefined) =>
+          v && !v.paused && cue && cue.audioChannels > 0
+            ? readPeaks(v, cue.audioChannels === 1)
+            : null;
+        const pkA = readPlaying(vA, cueA);
+        const pkB = readPlaying(vB, cueB);
+        let rawL = Math.max(pkA?.l ?? 0, pkB?.l ?? 0);
+        let rawR = Math.max(pkA?.r ?? 0, pkB?.r ?? 0);
+        if (rawL === 0 && rawR === 0) {
+          // Nothing on air: show the Preview audition level instead
+          const pkP = readPlaying(prvVid, prvCueObj);
+          rawL = pkP?.l ?? 0;
+          rawR = pkP?.r ?? 0;
         }
+
+        // Fast attack, smooth release for the bars; slower decay for the peak markers
+        smoothL = Math.max(peakToLevel(rawL), smoothL * 0.82);
+        smoothR = Math.max(peakToLevel(rawR), smoothR * 0.82);
+        if (smoothL < 0.5) smoothL = 0;
+        if (smoothR < 0.5) smoothR = 0;
+        peakHoldL = Math.max(smoothL, peakHoldL * 0.94);
+        peakHoldR = Math.max(smoothR, peakHoldR * 0.94);
+        if (peakHoldL < 0.5) peakHoldL = 0;
+        if (peakHoldR < 0.5) peakHoldR = 0;
+
+        setVuLevels((prev) =>
+          prev.left === smoothL &&
+          prev.right === smoothR &&
+          prev.peakL === peakHoldL &&
+          prev.peakR === peakHoldR
+            ? prev
+            : { left: smoothL, right: smoothR, peakL: peakHoldL, peakR: peakHoldR }
+        );
       }
 
       // Build DeckSyncPayloads & Sync with 2nd Display Output Window
@@ -872,6 +1088,7 @@ const OperatorConsole: React.FC = () => {
           showOSD: showOSDRef.current,
           programCueName: activeCue?.name || '',
           programCueNumber: activeCue?.cueNumber || '',
+          programFps: activeCue?.fps || 25,
           remainingTime: activeCue
             ? Math.max(
                 0,
@@ -955,13 +1172,16 @@ const OperatorConsole: React.FC = () => {
         v.currentTime = cue.inPoint || 0;
       }
       endActionTriggeredRef.current = false;
-      setIsFrozen(false);
-      isFrozenRef.current = false;
+      // PLAY releases blackout / freeze; we start playback ourselves below
+      setFreeze(false, true);
+      setBlackout(false, true);
+      pausedByFreezeRef.current = [];
+      pausedByBlackoutRef.current = [];
       v.play().catch(() => {});
     } else {
       v.pause();
     }
-  }, [ensureAudioGraph, programCueId, previewCueId, triggerTakeCue]);
+  }, [ensureAudioGraph, programCueId, previewCueId, triggerTakeCue, setFreeze, setBlackout]);
 
   const handleRestartPgm = useCallback(() => {
     const v = activeDeckRef.current === 'A' ? pgmVideoARef.current : pgmVideoBRef.current;
@@ -997,15 +1217,17 @@ const OperatorConsole: React.FC = () => {
   );
 
   const handlePanic = useCallback(() => {
-    pgmVideoARef.current?.pause();
-    pgmVideoBRef.current?.pause();
-    previewVideoRef.current?.pause();
-    setIsBlackout(true);
-    isBlackoutRef.current = true;
+    // PANIC (ESC) = CLEAR OUTPUT: stop and unload the program so the output is empty (black screen
+    // with nothing playing). It is not a blackout: blackout / freeze / test pattern are released too.
+    logEvent('INFO', 'panic', 'ESC: salida limpiada');
+    pausedByBlackoutRef.current = [];
+    pausedByFreezeRef.current = [];
+    setBlackout(false, true);
+    setFreeze(false, true);
+    resetPlayback();
     setIsTestPattern(false);
     isTestPatternRef.current = false;
-    setPgmPlaying(false);
-  }, []);
+  }, [setBlackout, setFreeze]);
 
   // Handle incoming OSC / HTTP commands from Bitfocus Companion
   useEffect(() => {
@@ -1036,16 +1258,10 @@ const OperatorConsole: React.FC = () => {
           handlePanic();
           break;
         case 'blackout':
-          setIsBlackout((b) => {
-            isBlackoutRef.current = !b;
-            return !b;
-          });
+          setBlackout(!isBlackoutRef.current);
           break;
         case 'freeze':
-          setIsFrozen((f) => {
-            isFrozenRef.current = !f;
-            return !f;
-          });
+          setFreeze(!isFrozenRef.current);
           break;
         case 'testPattern':
           setIsTestPattern((t) => {
@@ -1113,6 +1329,18 @@ const OperatorConsole: React.FC = () => {
           }
           break;
         }
+        case 'setGotoTarget': {
+          // /cue/goto <index>: make the program (or preview) cue jump to cue #index when it ends
+          const dest = cuesRef.current[Math.max(0, Number(cmd.value) - 1)];
+          const srcId = programCueId || previewCueId;
+          if (dest && srcId) {
+            endActionTriggeredRef.current = false;
+            setCues((prev) =>
+              prev.map((c) => (c.id === srcId ? { ...c, endAction: 'goto', gotoCueId: dest.id } : c))
+            );
+          }
+          break;
+        }
         case 'setTransitionType': {
           const t = String(cmd.value || 'dissolve') as TransitionType;
           setTransitionType(t);
@@ -1137,6 +1365,9 @@ const OperatorConsole: React.FC = () => {
         case 'setEndAction': {
           const act = String(cmd.value || 'hold') as EndAction;
           const targetId = programCueId || previewCueId;
+          const targetCueObj = cuesRef.current.find((c) => c.id === targetId);
+          // 'goto' needs a destination; set it from the UI (or /cue/goto) first
+          if (act === 'goto' && !targetCueObj?.gotoCueId) break;
           if (targetId) {
             endActionTriggeredRef.current = false;
             setCues((prev) =>
@@ -1197,7 +1428,10 @@ const OperatorConsole: React.FC = () => {
           break;
         }
         case 'setVolume':
-          setMasterVolume(Math.max(0, Math.min(125, Number(cmd.value) || 100)));
+          {
+            const vol = Number(cmd.value);
+            setMasterVolume(Math.max(0, Math.min(125, Number.isFinite(vol) ? vol : 100)));
+          }
           break;
         case 'toggleBgBlur': {
           const targetId = programCueId || previewCueId;
@@ -1239,7 +1473,8 @@ const OperatorConsole: React.FC = () => {
           break;
         }
         case 'setZoom': {
-          const z = Math.max(50, Math.min(300, Number(cmd.value) || 100));
+          const zRaw = Number(cmd.value);
+          const z = Math.max(50, Math.min(300, Number.isFinite(zRaw) ? zRaw : 100));
           const targetId = programCueId || previewCueId;
           if (targetId) {
             setCues((prev) =>
@@ -1283,6 +1518,8 @@ const OperatorConsole: React.FC = () => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Ignore key auto-repeat and Ctrl/Alt/Meta combos so they can't fire show actions by accident
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -1298,16 +1535,10 @@ const OperatorConsole: React.FC = () => {
         handlePgmGotoEnd(10);
       } else if (e.key === 'b' || e.key === 'B') {
         e.preventDefault();
-        setIsBlackout((prev) => {
-          isBlackoutRef.current = !prev;
-          return !prev;
-        });
+        setBlackout(!isBlackoutRef.current);
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
-        setIsFrozen((prev) => {
-          isFrozenRef.current = !prev;
-          return !prev;
-        });
+        setFreeze(!isFrozenRef.current);
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         handleRestartPgm();
@@ -1368,8 +1599,57 @@ const OperatorConsole: React.FC = () => {
     triggerTakeCue,
   ]);
 
+  // Multi-selection (Shift / Ctrl in the Cue List). selectedCueId stays the "primary" cue shown in the inspector.
+  const selectedCueIds =
+    multiSelectedIds.length > 0 ? multiSelectedIds : selectedCueId ? [selectedCueId] : [];
+
+  // Selecting a cue by any other means (arrow keys, TAKE auto-advance...) ends the multi-selection
+  useEffect(() => {
+    setMultiSelectedIds((prev) =>
+      prev.length > 0 && selectedCueId && prev.includes(selectedCueId) ? prev : prev.length ? [] : prev
+    );
+  }, [selectedCueId]);
+
+  const deleteCues = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    if (programCueId && idSet.has(programCueId)) resetPlayback();
+    setCues((prev) =>
+      prev
+        .filter((c) => !idSet.has(c.id))
+        .map((c) =>
+          c.gotoCueId && idSet.has(c.gotoCueId)
+            ? { ...c, gotoCueId: null, endAction: c.endAction === 'goto' ? 'hold' : c.endAction }
+            : c
+        )
+    );
+    if (previewCueId && idSet.has(previewCueId)) setPreviewCueId(null);
+    if (selectedCueId && idSet.has(selectedCueId)) setSelectedCueId(null);
+    setMultiSelectedIds([]);
+  };
+
+  // Move a group of cues one position up/down keeping their relative order
+  const moveCues = (ids: string[], dir: -1 | 1) => {
+    const idSet = new Set(ids);
+    const next = [...cues];
+    if (dir === -1) {
+      for (let i = 1; i < next.length; i++) {
+        if (idSet.has(next[i].id) && !idSet.has(next[i - 1].id)) {
+          [next[i - 1], next[i]] = [next[i], next[i - 1]];
+        }
+      }
+    } else {
+      for (let i = next.length - 2; i >= 0; i--) {
+        if (idSet.has(next[i].id) && !idSet.has(next[i + 1].id)) {
+          [next[i + 1], next[i]] = [next[i], next[i + 1]];
+        }
+      }
+    }
+    setCues(next);
+  };
+
   // Helper to update a cue
-  const updateCue = (id: string, patch: Partial<VideoCue>) => {
+  const updateCue =(id: string, patch: Partial<VideoCue>) => {
     setCues((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   };
 
@@ -1401,7 +1681,12 @@ const OperatorConsole: React.FC = () => {
 
     for (let i = 0; i < paths.length; i++) {
       const filePath = paths[i];
-      const probe = await window.electronAPI.probeMedia(filePath);
+      let probe;
+      try {
+        probe = await window.electronAPI.probeMedia(filePath);
+      } catch {
+        continue; // skip files that fail to probe instead of aborting the whole import
+      }
       const cueNum = String(baseCount + i + 1).padStart(2, '0');
       const cleanName = probe.fileName.replace(/\.[^/.]+$/, '');
 
@@ -1465,14 +1750,12 @@ const OperatorConsole: React.FC = () => {
       newCues.push(cue);
     }
 
-    setCues((prev) => {
-      const updated = [...prev, ...newCues];
-      if (!previewCueId && newCues.length > 0) {
-        setPreviewCueId(newCues[0].id);
-        setSelectedCueId(newCues[0].id);
-      }
-      return updated;
-    });
+    if (newCues.length === 0) return;
+    setCues((prev) => [...prev, ...newCues]);
+    if (!previewCueId) {
+      setPreviewCueId(newCues[0].id);
+      setSelectedCueId(newCues[0].id);
+    }
   };
 
   const handleAddVideos = async () => {
@@ -1562,19 +1845,50 @@ const OperatorConsole: React.FC = () => {
     });
   };
 
+  // Stop and unload everything on air / in preview (used when replacing or deleting content)
+  const resetPlayback = () => {
+    cancelAnimationFrame(transitionRafRef.current);
+    for (const v of [pgmVideoARef.current, pgmVideoBRef.current]) {
+      if (!v) continue;
+      v.pause();
+      v.removeAttribute('data-loaded-url');
+      v.removeAttribute('src');
+      v.load();
+    }
+    const pv = previewVideoRef.current;
+    if (pv) {
+      pv.pause();
+      pv.removeAttribute('data-cue-id');
+    }
+    setDeckACueId(null);
+    deckACueIdRef.current = null;
+    setDeckBCueId(null);
+    deckBCueIdRef.current = null;
+    setProgramCueId(null);
+    setPgmPlaying(false);
+    setTransitionProgress(1);
+    transProgressRef.current = 1;
+    endActionTriggeredRef.current = false;
+  };
+
   const handleSaveShow = async () => {
     if (!window.electronAPI) return;
-    const schema: ShowFileSchema = {
-      version: '1.4',
-      showName,
-      savedAt: new Date().toISOString(),
-      masterVolume,
-      defaultTransitionType: transitionType,
-      defaultTransitionDuration: transitionDuration,
-      mosaicConfig,
-      cues,
-    };
-    await window.electronAPI.saveShowFile(JSON.stringify(schema, null, 2), showName);
+    try {
+      const schema: ShowFileSchema = {
+        version: '1.5',
+        showName,
+        savedAt: new Date().toISOString(),
+        masterVolume,
+        defaultTransitionType: transitionType,
+        defaultTransitionDuration: transitionDuration,
+        mosaicConfig,
+        cues,
+      };
+      await window.electronAPI.saveShowFile(JSON.stringify(schema, null, 2), showName);
+    } catch (err: any) {
+      logEvent('ERROR', 'project', `No se pudo guardar el proyecto: ${err?.message || err}`);
+      window.alert(`No se pudo guardar el proyecto: ${err?.message || err}`);
+    }
   };
 
   const handleOpenShow = async () => {
@@ -1583,23 +1897,33 @@ const OperatorConsole: React.FC = () => {
     if (!res) return;
     try {
       const parsed: ShowFileSchema = JSON.parse(res.content);
-      setShowName(parsed.showName || 'CuePro Show');
+      if (!parsed || !Array.isArray(parsed.cues)) {
+        throw new Error('el archivo no contiene una lista de cues válida');
+      }
+      resetPlayback();
+      setShowName(parsed.showName || 'PlayCue Show');
+      logEvent('INFO', 'project', `Proyecto abierto: ${res.filePath} (${parsed.cues.length} cues)`);
       setMasterVolume(parsed.masterVolume ?? 100);
       setTransitionType(parsed.defaultTransitionType || 'dissolve');
       setTransitionDuration(parsed.defaultTransitionDuration || 1.0);
       if (parsed.mosaicConfig) {
         setMosaicConfig(parsed.mosaicConfig);
       }
-      setCues(parsed.cues || []);
-      if (parsed.cues && parsed.cues.length > 0) {
-        setPreviewCueId(parsed.cues[0].id);
-        setSelectedCueId(parsed.cues[0].id);
-      }
-    } catch {}
+      setCues(parsed.cues);
+      setPreviewCueId(parsed.cues.length > 0 ? parsed.cues[0].id : null);
+      setSelectedCueId(parsed.cues.length > 0 ? parsed.cues[0].id : null);
+    } catch (err: any) {
+      logEvent('ERROR', 'project', `No se pudo abrir el proyecto: ${err?.message || err}`);
+      window.alert(`No se pudo abrir el proyecto: ${err?.message || err}`);
+    }
   };
 
   const handleNewShow = () => {
-    handlePanic();
+    resetPlayback();
+    pausedByBlackoutRef.current = [];
+    pausedByFreezeRef.current = [];
+    setBlackout(false, true);
+    setFreeze(false, true);
     setCues([]);
     setPreviewCueId(null);
     setProgramCueId(null);
@@ -1855,55 +2179,13 @@ const OperatorConsole: React.FC = () => {
             </div>
           )}
 
-          <div className="display-selector-group">
-            <Monitor size={14} className="cyan-text" />
-            <select
-              className="display-select"
-              value={mosaicConfig.display1Id ?? selectedDisplayId}
-              onChange={(e) => {
-                const id = Number(e.target.value);
-                setSelectedDisplayId(id);
-                const nextMosaic = { ...mosaicConfig, display1Id: id };
-                setMosaicConfig(nextMosaic);
-                if (outputOpen && window.electronAPI) {
-                  window.electronAPI
-                    .setOutputWindow({
-                      open: true,
-                      displayId: id,
-                      windowed: false,
-                      mosaicConfig: nextMosaic,
-                    })
-                    .then((res) => {
-                      setOutputOpen(res.isOpen);
-                      setIsSpannedActive(!!res.isSpanned);
-                    });
-                }
-              }}
-              title="Seleccionar Pantalla de Salida Fullscreen"
-            >
-              {displays.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <button
-            className={`top-btn mosaic-top-btn ${mosaicConfig.mode !== 'single' ? 'active-cyan' : ''}`}
+            className="top-btn"
             onClick={() => setIsMosaicModalOpen(true)}
-            title="Configurar Mosaico Síncrono (Horizontal 2×1, Vertical 1×2, Espejo Dual)"
+            title="Configuración: pantallas de salida, modo de salida y salida de audio"
           >
-            <Layers size={14} />
-            <span>
-              {mosaicConfig.mode === 'horizontal_2x1'
-                ? 'Mosaico 2×1 H'
-                : mosaicConfig.mode === 'vertical_1x2'
-                ? 'Mosaico 1×2 V'
-                : mosaicConfig.mode === 'mirror_2x'
-                ? 'Espejo Dual'
-                : 'Mosaico'}
-            </span>
+            <Settings size={14} />
+            <span>Configuración</span>
           </button>
 
           <button
@@ -2041,19 +2323,9 @@ const OperatorConsole: React.FC = () => {
               if (previewCueId) triggerTakeCue(previewCueId, true);
             }}
             isBlackout={isBlackout}
-            onToggleBlackout={() =>
-              setIsBlackout((b) => {
-                isBlackoutRef.current = !b;
-                return !b;
-              })
-            }
+            onToggleBlackout={() => setBlackout(!isBlackoutRef.current)}
             isFrozen={isFrozen}
-            onToggleFreeze={() =>
-              setIsFrozen((f) => {
-                isFrozenRef.current = !f;
-                return !f;
-              })
-            }
+            onToggleFreeze={() => setFreeze(!isFrozenRef.current)}
             isTestPattern={isTestPattern}
             onToggleTestPattern={() =>
               setIsTestPattern((t) => {
@@ -2104,20 +2376,24 @@ const OperatorConsole: React.FC = () => {
             <CueList
               cues={cues}
               selectedCueId={selectedCueId}
+              selectedCueIds={selectedCueIds}
               previewCueId={previewCueId}
               programCueId={programCueId}
-              onSelectCue={(id) => setSelectedCueId(id)}
+              onSelectCue={(id) => {
+                setMultiSelectedIds([]);
+                setSelectedCueId(id);
+              }}
+              onSelectCues={(ids, primaryId) => {
+                setMultiSelectedIds(ids.length > 1 ? ids : []);
+                setSelectedCueId(primaryId);
+              }}
               onLoadToPreview={(id) => {
                 setPreviewCueId(id);
                 setSelectedCueId(id);
               }}
               onTakeCueToProgram={(id) => triggerTakeCue(id, false)}
               onUpdateCue={updateCue}
-              onDeleteCue={(id) => {
-                setCues((prev) => prev.filter((c) => c.id !== id));
-                if (previewCueId === id) setPreviewCueId(null);
-                if (selectedCueId === id) setSelectedCueId(null);
-              }}
+              onDeleteCues={deleteCues}
               onDuplicateCue={(id) => {
                 const idx = cues.findIndex((c) => c.id === id);
                 if (idx < 0) return;
@@ -2132,14 +2408,7 @@ const OperatorConsole: React.FC = () => {
                 next.splice(idx + 1, 0, copy);
                 setCues(next);
               }}
-              onMoveCue={(index, dir) => {
-                const target = index + dir;
-                if (target < 0 || target >= cues.length) return;
-                const next = [...cues];
-                const [item] = next.splice(index, 1);
-                next.splice(target, 0, item);
-                setCues(next);
-              }}
+              onMoveCues={moveCues}
               onReorderCues={(from, to) => {
                 const next = [...cues];
                 const [item] = next.splice(from, 1);
@@ -2169,6 +2438,7 @@ const OperatorConsole: React.FC = () => {
           >
             <CueInspector
               cue={selectedCue}
+              allCues={cues}
               prvCurrentTime={prvTime}
               totalCanvasWidth={totalCanvasWidth}
               totalCanvasHeight={totalCanvasHeight}
@@ -2201,6 +2471,9 @@ const OperatorConsole: React.FC = () => {
         onChangeMosaicConfig={(next) => {
           setMosaicConfig(next);
         }}
+        audioDevices={audioDevices}
+        audioOutputId={audioOutputId}
+        onChangeAudioOutput={handleChangeAudioOutput}
         onRefreshDisplays={handleRefreshDisplays}
         onApplyAndLaunchOutput={(windowed) => {
           handleToggleOutputWindow(!!windowed, true);

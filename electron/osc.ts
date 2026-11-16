@@ -95,6 +95,13 @@ export function parseOscPacket(buf: Buffer): { address: string; args: (number | 
           args.push(1);
         } else if (t === 'F') {
           args.push(0);
+        } else if (t === 'h' || t === 't' || t === 'd') {
+          // 64-bit int / timetag / double: skip so following arguments stay aligned
+          offset += 8;
+        } else if (t === 'N' || t === 'I') {
+          // nil / impulse carry no data
+        } else {
+          break; // unknown type: stop rather than misread the remaining bytes
         }
       }
     }
@@ -288,6 +295,9 @@ export class RemoteControlServer {
       case '/api/cut-cue':
       case '/cue/cut':
         return make('cutCueIndex', Number(arg ?? 1));
+      case '/api/goto-cue':
+      case '/cue/goto':
+        return make('setGotoTarget', Number(arg ?? 1));
       case '/api/transition-type':
       case '/transition/type':
         return make('setTransitionType', String(arg ?? 'dissolve'));
@@ -350,7 +360,9 @@ export class RemoteControlServer {
   private startOscServer() {
     try {
       const socket = dgram.createSocket('udp4');
-      socket.on('error', () => {});
+      socket.on('error', (err) => {
+        console.warn('[PlayCue] OSC UDP server error:', err.message);
+      });
       socket.on('message', (msg) => {
         const parsed = parseOscPacket(msg);
         if (parsed) {
@@ -381,6 +393,16 @@ export class RemoteControlServer {
         const urlObj = new URL(req.url || '/', `http://127.0.0.1:${this.httpPort}`);
         const pathname = urlObj.pathname;
 
+        // Browsers always send Sec-Fetch-Site; Companion / curl / Node clients never do.
+        // Refusing browser-originated requests stops web pages from firing show commands
+        // (CSRF) while keeping the remote API working for control surfaces.
+        const isStatus = pathname === '/api/status' || pathname === '/status';
+        if (!isStatus && req.headers['sec-fetch-site']) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'Browser requests are not allowed' }));
+          return;
+        }
+
         if (pathname === '/api/status' || pathname === '/status') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, telemetry: this.telemetry }));
@@ -405,7 +427,9 @@ export class RemoteControlServer {
         res.end(JSON.stringify({ ok: false, error: 'Unknown endpoint', path: pathname }));
       });
 
-      server.on('error', () => {});
+      server.on('error', (err) => {
+        console.warn('[PlayCue] HTTP remote server error:', err.message);
+      });
       server.listen(this.httpPort, '0.0.0.0');
       this.httpServer = server;
     } catch {}

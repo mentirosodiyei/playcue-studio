@@ -1,6 +1,6 @@
 {
-  "name": "companion-module-cuepro-studio",
-  "version": "1.6.0",
+  "name": "companion-module-playcue-studio",
+  "version": "1.6.1",
   "license": "MIT",
   "type": "commonjs",
   "main": "main.js",

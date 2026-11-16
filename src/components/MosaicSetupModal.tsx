@@ -8,10 +8,16 @@ import {
   ArrowLeftRight,
   RefreshCw,
   CheckCircle2,
-  Layers,
+  Settings,
   ExternalLink,
+  Monitor as MonitorIcon,
 } from 'lucide-react';
 import { DisplayInfo, MosaicConfig, MosaicMode } from '../types/cue';
+
+export interface AudioOutputDevice {
+  id: string;
+  label: string;
+}
 
 interface MosaicSetupModalProps {
   isOpen: boolean;
@@ -20,6 +26,10 @@ interface MosaicSetupModalProps {
   mosaicConfig: MosaicConfig;
   outputOpen: boolean;
   isSpannedActive: boolean;
+  audioDevices: AudioOutputDevice[];
+  /** '' = system default output */
+  audioOutputId: string;
+  onChangeAudioOutput: (deviceId: string) => void;
   onChangeMosaicConfig: (next: MosaicConfig) => void;
   onRefreshDisplays: () => void;
   onApplyAndLaunchOutput: (windowed?: boolean) => void;
@@ -32,6 +42,9 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
   mosaicConfig,
   outputOpen,
   isSpannedActive,
+  audioDevices,
+  audioOutputId,
+  onChangeAudioOutput,
   onChangeMosaicConfig,
   onRefreshDisplays,
   onApplyAndLaunchOutput,
@@ -65,6 +78,16 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
   const div = gcd(totalW, totalH) || 1;
   const aspectStr = `${Math.round(totalW / div)}:${Math.round(totalH / div)}`;
 
+  // The preview box has exactly the aspect ratio of the real output canvas
+  const canvasRatio = totalW / Math.max(1, totalH);
+  const PREVIEW_MAX_H = 150;
+  const previewBoxStyle: React.CSSProperties = {
+    aspectRatio: `${totalW} / ${totalH}`,
+    height: 'auto',
+    width: `min(100%, ${Math.round(canvasRatio * PREVIEW_MAX_H)}px)`,
+    maxHeight: PREVIEW_MAX_H,
+  };
+
   const handleSwapOutputs = () => {
     if (!d1 || !d2) return;
     onChangeMosaicConfig({
@@ -83,19 +106,17 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
       >
         <div className="modal-header">
           <div className="modal-title">
-            <Layers size={18} className="cyan-text" />
-            <span>
-              CONFIGURADOR MULTIPANTALLA, FORMATOS CUSTOM EDID Y MOSAICO SÍNCRONO (2×1 / 1×2)
-            </span>
+            <Settings size={18} className="cyan-text" />
+            <span>Configuración</span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               className="top-btn"
               onClick={onRefreshDisplays}
-              title="Re-escanear pantallas y resoluciones EDID en Windows"
+              title="Volver a detectar pantallas y resoluciones en Windows"
             >
               <RefreshCw size={13} />
-              <span>Detectar Señales Windows</span>
+              <span>Detectar pantallas</span>
             </button>
             <button className="row-icon-btn" onClick={onClose}>
               <X size={16} />
@@ -107,7 +128,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
           {/* 1. Detected Displays in Windows */}
           <div>
             <div className="insp-label" style={{ marginBottom: 6 }}>
-              SALIDAS DE VÍDEO DETECTADAS EN WINDOWS ({displays.length} CONECTADAS)
+              SALIDAS DE VÍDEO DETECTADAS ({displays.length} CONECTADAS)
             </div>
             <div className="detected-displays-grid">
               {displays.map((d, idx) => (
@@ -139,10 +160,10 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Mosaic Mode Selector */}
+          {/* 2. Output composition mode */}
           <div>
             <div className="insp-label" style={{ marginBottom: 6 }}>
-              MODO DE COMPOSICIÓN DE SALIDA / MOSAICO
+              MODO DE SALIDA
             </div>
             <div className="mosaic-mode-cards">
               {(
@@ -195,7 +216,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
             </div>
           </div>
 
-          {/* 3. Output Mapping & Visual Canvas Preview */}
+          {/* 3. Output mapping (video + audio) & visual canvas preview */}
           <div className="modal-2col">
             <div className="insp-group">
               <label className="insp-label">ASIGNACIÓN DE SALIDAS FÍSICAS</label>
@@ -338,9 +359,28 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                   </div>
                 </div>
               )}
+              {/* Audio output device */}
+              <div style={{ marginTop: 10 }}>
+                <small style={{ color: '#f59e0b', fontWeight: 700 }}>SALIDA DE AUDIO</small>
+                <select
+                  className="insp-select"
+                  style={{ marginTop: 4 }}
+                  value={audioOutputId}
+                  onChange={(e) => onChangeAudioOutput(e.target.value)}
+                  title="Dispositivo por el que sale el audio de la app"
+                >
+                  <option value="">Predeterminado del sistema</option>
+                  {audioDevices.map((dev) => (
+                    <option key={dev.id} value={dev.id}>
+                      {dev.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
             </div>
 
-            {/* Visual Preview of Virtual Mosaic Canvas */}
+            {/* Visual Preview of the virtual canvas (same aspect ratio as the real output) */}
             <div className="insp-group" style={{ justifyContent: 'space-between' }}>
               <div className="insp-label-flex">
                 <span className="insp-label">LIENZO VIRTUAL RESULTANTE</span>
@@ -351,14 +391,14 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
 
               <div className="mosaic-diagram-stage">
                 {mosaicConfig.mode === 'horizontal_2x1' && (
-                  <div className="mosaic-vis-horiz">
-                    <div className="m-tile slot1">
+                  <div className="mosaic-vis-horiz" style={previewBoxStyle}>
+                    <div className="m-tile slot1" style={{ flex: `${d1?.physicalWidth || 1} 1 0` }}>
                       <strong>SALIDA 1 (IZQ)</strong>
                       <span>
                         {d1?.physicalWidth}×{d1?.physicalHeight}
                       </span>
                     </div>
-                    <div className="m-tile slot2">
+                    <div className="m-tile slot2" style={{ flex: `${d2?.physicalWidth || 1} 1 0` }}>
                       <strong>SALIDA 2 (DER)</strong>
                       <span>
                         {d2?.physicalWidth}×{d2?.physicalHeight}
@@ -368,14 +408,14 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 )}
 
                 {mosaicConfig.mode === 'vertical_1x2' && (
-                  <div className="mosaic-vis-vert">
-                    <div className="m-tile slot1">
+                  <div className="mosaic-vis-vert" style={previewBoxStyle}>
+                    <div className="m-tile slot1" style={{ flex: `${d1?.physicalHeight || 1} 1 0` }}>
                       <strong>SALIDA 1 (SUPERIOR)</strong>
                       <span>
                         {d1?.physicalWidth}×{d1?.physicalHeight}
                       </span>
                     </div>
-                    <div className="m-tile slot2">
+                    <div className="m-tile slot2" style={{ flex: `${d2?.physicalHeight || 1} 1 0` }}>
                       <strong>SALIDA 2 (INFERIOR)</strong>
                       <span>
                         {d2?.physicalWidth}×{d2?.physicalHeight}
@@ -385,7 +425,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 )}
 
                 {(mosaicConfig.mode === 'single' || mosaicConfig.mode === 'mirror_2x') && (
-                  <div className="mosaic-vis-single">
+                  <div className="mosaic-vis-single" style={previewBoxStyle}>
                     <div className="m-tile slot1">
                       <strong>
                         {mosaicConfig.mode === 'mirror_2x'
@@ -419,10 +459,10 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 onApplyAndLaunchOutput(true);
                 onClose();
               }}
-              title="Abre una ventana de prueba con la proporción exacta del Mosaico en tu monitor principal"
+              title="Abre una ventana de prueba con la proporción exacta de la salida en tu monitor principal"
             >
               <ExternalLink size={14} />
-              <span>Probar Lienzo Mosaico en Ventana Flotante</span>
+              <span>Probar Salida en Ventana Flotante</span>
             </button>
 
             <button
@@ -432,13 +472,30 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 onClose();
               }}
             >
-              <Layers size={15} />
+              <MonitorIcon size={15} />
               <span>
                 {outputOpen
-                  ? 'Actualizar Mosaico en Pantallas de Salida'
-                  : 'Activar Salida Mosaico en Pantallas'}
+                  ? 'Actualizar Salida en Pantallas'
+                  : 'Activar Salida en Pantallas'}
               </span>
             </button>
+          </div>
+
+          {/* Credits */}
+          <div
+            style={{
+              marginTop: 2,
+              paddingTop: 10,
+              borderTop: '1px solid rgba(148, 163, 184, 0.18)',
+              textAlign: 'center',
+              fontSize: 11,
+              color: '#94a3b8',
+              lineHeight: 1.6,
+            }}
+          >
+            <div style={{ fontWeight: 700, color: '#cbd5e1' }}>PlayCue Studio</div>
+            <div>David Redondo García</div>
+            <div style={{ userSelect: 'text' }}>davidrg81@proton.me</div>
           </div>
         </div>
       </div>

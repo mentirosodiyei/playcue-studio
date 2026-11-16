@@ -2889,3 +2889,118 @@ textarea {
 
 
 
+
+/* ================= macOS-style sliders (all <input type="range"> except the timeline scrub bar) ================= */
+input[type='range']:not(.scrub-slider) {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  outline: none;
+  --pct: 0%;
+  --slider-accent: #0a84ff;
+  --slider-track: rgba(255, 255, 255, 0.16);
+}
+
+input[type='range']:not(.scrub-slider)::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--slider-accent) 0%,
+    var(--slider-accent) var(--pct),
+    var(--slider-track) var(--pct),
+    var(--slider-track) 100%
+  );
+}
+
+input[type='range']:not(.scrub-slider)::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 0.5px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+  transition: transform 0.08s ease;
+}
+
+input[type='range']:not(.scrub-slider):active::-webkit-slider-thumb {
+  transform: scale(1.08);
+}
+
+input[type='range']:not(.scrub-slider):focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.45), 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+input[type='range']:not(.scrub-slider):disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Vertical master fader: same look, fill grows upwards */
+input[type='range'].vertical-fader {
+  height: auto;
+  width: 20px;
+}
+
+input[type='range'].vertical-fader::-webkit-slider-runnable-track {
+  height: auto;
+  width: 4px;
+  background: linear-gradient(
+    to top,
+    var(--slider-accent) 0%,
+    var(--slider-accent) var(--pct),
+    var(--slider-track) var(--pct),
+    var(--slider-track) 100%
+  );
+}
+
+input[type='range'].vertical-fader::-webkit-slider-thumb {
+  margin-top: 0;
+  margin-left: -7px;
+}
+
+/* ================= macOS-style scrollbars (thin, rounded, translucent) ================= */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  /* transparent border + clip makes the visible thumb a slim pill like on macOS */
+  border: 3px solid transparent;
+  background-clip: content-box;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.42);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(255, 255, 255, 0.55);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}

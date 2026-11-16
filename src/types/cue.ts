@@ -1,4 +1,4 @@
-export type EndAction = 'hold' | 'black' | 'loop' | 'next' | 'stop';
+export type EndAction = 'hold' | 'black' | 'loop' | 'next' | 'goto' | 'stop';
 
 export type TransitionType = 'cut' | 'dissolve' | 'dipToBlack' | 'wipe';
 
@@ -72,6 +72,8 @@ export interface VideoCue {
   inPoint: number;
   outPoint: number;
   endAction: EndAction;
+  /** Target cue id used when endAction === 'goto' (jump to another cue when this one ends). */
+  gotoCueId?: string | null;
   nextCueId?: string;
   // Transition settings when taking this cue to Program
   transitionType: TransitionType;
@@ -120,6 +122,8 @@ export interface VideoCue {
   isNativeCompatible: boolean;
   thumbnailDataUrl?: string;
   exists: boolean;
+  /** Set at runtime when the <video> element fails to decode/load this cue (cleared on success). */
+  playbackError?: string;
   color: CueColor;
   notes: string;
 }
@@ -178,6 +182,7 @@ export interface OutputSyncState {
   programCueName: string;
   programCueNumber: string;
   remainingTime: number;
+  programFps?: number;
   mosaicConfig?: MosaicConfig;
   totalCanvasWidth?: number;
   totalCanvasHeight?: number;
@@ -275,6 +280,9 @@ declare global {
       saveShowFile: (json: string, defaultName: string) => Promise<string | null>;
       openShowFile: () => Promise<{ filePath: string; content: string } | null>;
       autosaveShow: (json: string) => Promise<boolean>;
+      logSetProject: (name: string) => Promise<void>;
+      logWrite: (level: string, source: string, message: string) => Promise<void>;
+      openLogsFolder: () => Promise<string>;
       loadAutosaveShow: () => Promise<string | null>;
       getPathForFile: (file: File) => string;
       onDisplaysUpdated: (cb: (displays: DisplayInfo[]) => void) => () => void;

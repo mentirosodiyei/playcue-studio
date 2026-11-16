@@ -9,7 +9,7 @@ import {
 } from '@companion-module/base';
 import http from 'http';
 
-interface CueProConfig {
+interface PlayCueConfig {
   host: string;
   httpPort: number;
   pollInterval: number;
@@ -26,7 +26,7 @@ interface TelemetryCue {
   endAction: string;
 }
 
-interface CueProTelemetry {
+interface PlayCueTelemetry {
   showName: string;
   isPlaying: boolean;
   isBlackout: boolean;
@@ -65,16 +65,16 @@ function formatShortTc(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-class CueProStudioInstance extends InstanceBase<CueProConfig> {
-  private config: CueProConfig = {
+class PlayCueStudioInstance extends InstanceBase<PlayCueConfig> {
+  private config: PlayCueConfig = {
     host: '127.0.0.1',
     httpPort: 51080,
     pollInterval: 250,
   };
 
   private pollTimer: NodeJS.Timeout | null = null;
-  private state: CueProTelemetry = {
-    showName: 'CuePro Studio',
+  private state: PlayCueTelemetry = {
+    showName: 'PlayCue Studio',
     isPlaying: false,
     isBlackout: false,
     isFrozen: false,
@@ -102,7 +102,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
     cues: [],
   };
 
-  public async init(config: CueProConfig): Promise<void> {
+  public async init(config: PlayCueConfig): Promise<void> {
     this.config = {
       host: config.host || '127.0.0.1',
       httpPort: Number(config.httpPort) || 51080,
@@ -124,7 +124,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
     }
   }
 
-  public async configUpdated(config: CueProConfig): Promise<void> {
+  public async configUpdated(config: PlayCueConfig): Promise<void> {
     this.config = {
       host: config.host || '127.0.0.1',
       httpPort: Number(config.httpPort) || 51080,
@@ -141,12 +141,12 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
         width: 12,
         label: 'Información',
         value:
-          'Conecta Bitfocus Companion con CuePro Studio (v1.2.0+). Asegúrate de que CuePro Studio esté abierto en el PC de vídeo.',
+          'Conecta Bitfocus Companion con PlayCue Studio (v1.6.1+). Asegúrate de que PlayCue Studio esté abierto en el PC de vídeo.',
       },
       {
         type: 'textinput',
         id: 'host',
-        label: 'IP del PC de CuePro Studio',
+        label: 'IP del PC de PlayCue Studio',
         width: 6,
         default: '127.0.0.1',
       },
@@ -221,7 +221,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       }
     );
     req.on('error', () => {
-      this.updateStatus(InstanceStatus.ConnectionFailure, 'Esperando a CuePro Studio...');
+      this.updateStatus(InstanceStatus.ConnectionFailure, 'Esperando a PlayCue Studio...');
     });
     req.on('timeout', () => {
       req.destroy();
@@ -396,6 +396,23 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
           this.sendCommand(`/api/goto-end?value=${sec}`);
         },
       },
+      goto_cue: {
+        name: 'IR A: El cue en aire (o previo) saltará al cue Nº al terminar (activa End Action IR A)',
+        options: [
+          {
+            type: 'number',
+            id: 'index',
+            label: 'Nº de cue de destino (posición en la lista)',
+            default: 1,
+            min: 1,
+            max: 999,
+          },
+        ],
+        callback: (ev) => {
+          const n = Math.max(1, Math.floor(Number(ev.options.index) || 1));
+          this.sendCommand(`/api/goto-cue?value=${n}`);
+        },
+      },
       override: {
         name: 'Salidas y Emergencia: Blackout, Freeze, Carta Ajuste, Panic, OSD',
         options: [
@@ -405,10 +422,10 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
             label: 'Acción',
             default: 'blackout',
             choices: [
-              { id: 'blackout', label: 'Blackout / Fade to Black (Toggle)' },
-              { id: 'freeze', label: 'Freeze / Congelar Salida (Toggle)' },
+              { id: 'blackout', label: 'Blackout (Toggle, pausa el vídeo y lo reanuda al quitarlo)' },
+              { id: 'freeze', label: 'Freeze (Toggle, congela la imagen de salida; el clip sigue)' },
               { id: 'test-pattern', label: 'Carta de Ajuste SMPTE (Toggle)' },
-              { id: 'panic', label: 'PANIC (Detener todo + Blackout)' },
+              { id: 'panic', label: 'PANIC / ESC (Limpiar salida: detiene y descarga el programa)' },
               { id: 'output-toggle', label: 'Activar / Desactivar Pantallas de Salida' },
               { id: 'osd', label: 'Mostrar / Ocultar Timecode OSD en Salida' },
             ],
@@ -467,6 +484,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
               { id: 'black', label: 'BLACK — Ir a negro al terminar' },
               { id: 'loop', label: 'LOOP — Bucle infinito entre In y Out' },
               { id: 'next', label: 'PLAY NEXT — Lanzar siguiente vídeo automáticamente' },
+              { id: 'goto', label: 'IR A — Saltar al cue elegido (definir antes con la acción "IR A")' },
               { id: 'stop', label: 'STOP — Detener y limpiar salida' },
             ],
           },
@@ -700,6 +718,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
               { id: 'black', label: 'BLACK' },
               { id: 'loop', label: 'LOOP' },
               { id: 'next', label: 'PLAY NEXT' },
+              { id: 'goto', label: 'IR A' },
               { id: 'stop', label: 'STOP' },
             ],
           },
@@ -743,7 +762,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Botón TAKE (Previo → Programa con Transición)',
       style: {
-        text: 'TAKE\n$(cuepro:transition_type) $(cuepro:transition_duration)',
+        text: 'TAKE\n$(playcue:transition_type) $(playcue:transition_duration)',
         size: '14',
         color: combineRgb(9, 11, 16),
         bgcolor: combineRgb(245, 158, 11),
@@ -771,7 +790,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Play / Pause Programa (con Tally)',
       style: {
-        text: 'PGM $(cuepro:pgm_state)\n$(cuepro:pgm_remaining)',
+        text: 'PGM $(playcue:pgm_state)\n$(playcue:pgm_remaining)',
         size: '14',
         color: combineRgb(255, 255, 255),
         bgcolor: combineRgb(15, 23, 42),
@@ -799,7 +818,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Reloj Tiempo del Vídeo (Transcurrido / Duración Total)',
       style: {
-        text: 'TIEMPO VÍDEO\n$(cuepro:pgm_elapsed)\n/ $(cuepro:pgm_duration)',
+        text: 'TIEMPO VÍDEO\n$(playcue:pgm_elapsed)\n/ $(playcue:pgm_duration)',
         size: '14',
         color: combineRgb(56, 189, 248),
         bgcolor: combineRgb(7, 9, 13),
@@ -813,7 +832,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Reloj REMAINING / Tiempo Restante (Verde / Ámbar <15s / Rojo <5s)',
       style: {
-        text: 'REMAINING\n$(cuepro:pgm_remaining)\nCUE $(cuepro:pgm_number)',
+        text: 'REMAINING\n$(playcue:pgm_remaining)\nCUE $(playcue:pgm_number)',
         size: '14',
         color: combineRgb(52, 211, 153),
         bgcolor: combineRgb(7, 9, 13),
@@ -900,7 +919,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Cue Anterior en Previo (PRV -)',
       style: {
-        text: '◀ CUE ANT\nPRV #$(cuepro:prv_number)',
+        text: '◀ CUE ANT\nPRV #$(playcue:prv_number)',
         size: '14',
         color: combineRgb(110, 231, 183),
         bgcolor: combineRgb(15, 23, 42),
@@ -914,7 +933,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '1. TAKE y Transporte Master',
       name: 'Cue Siguiente en Previo (PRV +)',
       style: {
-        text: 'CUE SIG ▶\nPRV #$(cuepro:prv_number)',
+        text: 'CUE SIG ▶\nPRV #$(playcue:prv_number)',
         size: '14',
         color: combineRgb(110, 231, 183),
         bgcolor: combineRgb(15, 23, 42),
@@ -932,7 +951,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
         category: '2. Lanzar Vídeos en PREVIO (PRV)',
         name: `Cargar Cue #${i} en Previo`,
         style: {
-          text: `PRV #${i}\n$(cuepro:cue_${i}_name)\n$(cuepro:cue_${i}_dur)`,
+          text: `PRV #${i}\n$(playcue:cue_${i}_name)\n$(playcue:cue_${i}_dur)`,
           size: 'auto',
           color: combineRgb(110, 231, 183),
           bgcolor: combineRgb(13, 24, 22),
@@ -973,7 +992,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
         category: '3. Lanzar Vídeos DIRECTO A PROGRAMA (con Transición App)',
         name: `Lanzar Cue #${i} Directo a Programa (con Transición)`,
         style: {
-          text: `PGM #${i}\n$(cuepro:cue_${i}_name)\n$(cuepro:cue_${i}_trans)`,
+          text: `PGM #${i}\n$(playcue:cue_${i}_name)\n$(playcue:cue_${i}_trans)`,
           size: 'auto',
           color: combineRgb(254, 202, 202),
           bgcolor: combineRgb(32, 14, 18),
@@ -1071,6 +1090,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       { id: 'black', label: 'AL TERMINAR:\nIR A NEGRO' },
       { id: 'loop', label: 'AL TERMINAR:\nLOOP (Bucle)' },
       { id: 'next', label: 'AL TERMINAR:\nPLAY NEXT' },
+      { id: 'goto', label: 'AL TERMINAR:\nIR A…' },
       { id: 'stop', label: 'AL TERMINAR:\nSTOP' },
     ];
 
@@ -1179,9 +1199,9 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
     presets['ovr_panic'] = {
       type: 'button',
       category: '5. Salidas, Mosaico 4K, Emergencia y Audio',
-      name: 'PANIC (Detener Todo y Negro)',
+      name: 'PANIC / ESC (Limpiar salida)',
       style: {
-        text: 'PANIC\nSTOP ALL',
+        text: 'PANIC\nLIMPIAR',
         size: '14',
         color: combineRgb(255, 255, 255),
         bgcolor: combineRgb(153, 27, 27),
@@ -1278,7 +1298,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '5. Salidas, Mosaico 4K, Emergencia y Audio',
       name: 'Mute Master Audio',
       style: {
-        text: 'AUDIO\n$(cuepro:master_volume)',
+        text: 'AUDIO\n$(playcue:master_volume)',
         size: '14',
         color: combineRgb(226, 232, 240),
         bgcolor: combineRgb(22, 31, 46),
@@ -1301,7 +1321,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '5. Salidas, Mosaico 4K, Emergencia y Audio',
       name: 'Subir Volumen Master (+5%)',
       style: {
-        text: 'VOL +\n$(cuepro:master_volume)',
+        text: 'VOL +\n$(playcue:master_volume)',
         size: '14',
         color: combineRgb(110, 231, 183),
         bgcolor: combineRgb(15, 23, 42),
@@ -1315,7 +1335,7 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
       category: '5. Salidas, Mosaico 4K, Emergencia y Audio',
       name: 'Bajar Volumen Master (-5%)',
       style: {
-        text: 'VOL -\n$(cuepro:master_volume)',
+        text: 'VOL -\n$(playcue:master_volume)',
         size: '14',
         color: combineRgb(252, 211, 77),
         bgcolor: combineRgb(15, 23, 42),
@@ -1398,4 +1418,4 @@ class CueProStudioInstance extends InstanceBase<CueProConfig> {
   }
 }
 
-runEntrypoint(CueProStudioInstance, []);
+runEntrypoint(PlayCueStudioInstance, []);

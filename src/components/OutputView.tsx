@@ -266,16 +266,7 @@ export const OutputView: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Allow pressing ESC on the output window to close it if testing on a single screen
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && window.electronAPI) {
-        window.electronAPI.setOutputWindow({ open: false });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // ESC on the output window is handled by the main process as PANIC (blackout); it never closes it.
 
   const getDeckWrapperStyle = (deck: DeckSyncPayload, deckKey: 'A' | 'B'): React.CSSProperties => {
     let clipPath = 'none';
@@ -330,11 +321,6 @@ export const OutputView: React.FC = () => {
         overflow: 'hidden',
         cursor: 'none',
         userSelect: 'none',
-      }}
-      onDoubleClick={() => {
-        if (window.electronAPI) {
-          window.electronAPI.setOutputWindow({ open: false });
-        }
       }}
     >
       {/* Virtual Mosaic Canvas (Full or Sliced for Output 1 / Output 2) */}
@@ -421,15 +407,24 @@ export const OutputView: React.FC = () => {
           />
         </div>
 
-        {state.isTestPattern && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-            <TestPatternCanvas
-              canvasWidth={viewport.canvasWidth}
-              canvasHeight={viewport.canvasHeight}
-              mosaicMode={viewport.mode}
-            />
-          </div>
-        )}
+        {/* Always mounted (only hidden) so turning the pattern on/off never changes the layer tree
+            or flashes an unpainted frame; its background is opaque. */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 10,
+            backgroundColor: '#0a0e17',
+            visibility: state.isTestPattern ? 'visible' : 'hidden',
+          }}
+        >
+          <TestPatternCanvas
+            active={state.isTestPattern}
+            canvasWidth={viewport.canvasWidth}
+            canvasHeight={viewport.canvasHeight}
+            mosaicMode={viewport.mode}
+          />
+        </div>
       </div>
 
       {/* Blackout Overlay */}
@@ -479,7 +474,7 @@ export const OutputView: React.FC = () => {
                   : '#10b981',
             }}
           >
-            REM -{formatTimecode(state.remainingTime, 25, true)}
+            REM -{formatTimecode(state.remainingTime, state.programFps || 25, true)}
           </div>
         </div>
       )}

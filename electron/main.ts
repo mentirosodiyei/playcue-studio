@@ -6,9 +6,13 @@ import {
   screen,
   protocol,
   shell,
+  Tray,
+  Menu,
+  nativeImage,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { spawnSync } from 'child_process';
 import { pathToFileURL } from 'url';
 import {
   probeMediaFile,
@@ -19,6 +23,7 @@ import {
   ConvertVideoOptions,
 } from './mediaTools';
 import { RemoteControlServer, LiveShowTelemetry } from './osc';
+import { initLogger, setLogProject, writeLog, getLogsRoot } from './logger';
 
 // Register media:// privileged scheme before app ready
 protocol.registerSchemesAsPrivileged([
@@ -52,7 +57,61 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
+/**
+ * Windows decides which GPU a process renders/decodes on from "Graphics settings"
+ * (HKCU\Software\Microsoft\DirectX\UserGpuPreferences). Chromium flags alone don't override it on
+ * hybrid laptops, so register this executable as "High performance": with a dedicated GPU Windows
+ * uses it, with only an integrated GPU it uses that one -- i.e. always the most powerful adapter.
+ * Returns true when the running executable was just registered and must restart to take effect.
+ */
+function ensureWindowsHighPerformanceGpu(): boolean {
+  if (process.platform !== 'win32' || process.argv.includes('--gpu-pref-applied')) return false;
+  const key = 'HKCU\\Software\\Microsoft\\DirectX\\UserGpuPreferences';
+  const exes = new Set<string>([process.execPath]);
+  if (process.env.PORTABLE_EXECUTABLE_FILE) exes.add(process.env.PORTABLE_EXECUTABLE_FILE);
+  let runningExeChanged = false;
+  for (const exe of exes) {
+    try {
+      const q = spawnSync('reg', ['query', key, '/v', exe], { windowsHide: true, encoding: 'utf8' });
+      if (q.status === 0 && /GpuPreference=2;/.test(q.stdout || '')) continue;
+      const w = spawnSync(
+        'reg',
+        ['add', key, '/v', exe, '/t', 'REG_SZ', '/d', 'GpuPreference=2;', '/f'],
+        { windowsHide: true, encoding: 'utf8' }
+      );
+      if (w.status === 0 && exe === process.execPath) runningExeChanged = true;
+    } catch {}
+  }
+  return runningExeChanged;
+}
+
+if (ensureWindowsHighPerformanceGpu()) {
+  // The preference only applies to processes started afterwards: restart once (guarded by the flag)
+  app.relaunch({ args: process.argv.slice(1).concat('--gpu-pref-applied') });
+  app.exit(0);
+}
+
+// Only one instance: a second one would fight over OSC/HTTP ports and the media cache
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showMainWindow());
+}
+
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+let trayHintShown = false;
+
+/** App icon (same one the installer uses). Packaged: resources/icon.ico; dev: build/icon.ico. */
+function getAppIconPath(): string | undefined {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'icon.ico'),
+    path.join(__dirname, '../build/icon.ico'),
+  ];
+  return candidates.find((p) => p && fs.existsSync(p));
+}
 let outputWindows: BrowserWindow[] = [];
 let currentOutputDisplayId: number | null = null;
 let currentMosaicMode: string = 'single';
@@ -145,15 +204,15 @@ function broadcastDisplays() {
 }
 
 function createMainWindow() {
-  const iconPath = path.join(__dirname, '../build/icon.ico');
+  const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1540,
     height: 920,
     minWidth: 1024,
     minHeight: 640,
     backgroundColor: '#0a0c10',
-    title: 'CuePro Studio',
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    title: 'PlayCue Studio',
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -166,10 +225,80 @@ function createMainWindow() {
 
   mainWindow.loadURL(getAppUrl());
 
+  // Closing with the X only hides the app to the system tray, so a live show can't be
+  // ended by a stray click. The real exit is "Salir" in the tray menu.
+  mainWindow.on('close', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    mainWindow?.hide();
+    if (tray && !trayHintShown) {
+      trayHintShown = true;
+      try {
+        tray.displayBalloon({
+          title: 'PlayCue Studio sigue en ejecución',
+          content: 'La app continúa en segundo plano. Haz clic en el icono para mostrarla o usa "Salir" para cerrarla.',
+          iconType: 'info',
+        });
+      } catch {}
+    }
+  });
+
+  // Windows shutdown / log-off must not be blocked by the hide-to-tray behaviour
+  mainWindow.on('session-end', () => {
+    isQuitting = true;
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     closeOutputWindows();
   });
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    const iconPath = getAppIconPath();
+    const image = iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
+    tray = new Tray(image);
+    tray.setToolTip('PlayCue Studio');
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Mostrar PlayCue Studio', click: () => showMainWindow() },
+        { label: 'Abrir carpeta de logs', click: () => void shell.openPath(getLogsRoot()) },
+        { type: 'separator' },
+        {
+          label: 'Salir',
+          click: async () => {
+            const res = await dialog.showMessageBox({
+              type: 'question',
+              buttons: ['Cancelar', 'Salir'],
+              defaultId: 0,
+              cancelId: 0,
+              title: 'Salir de PlayCue Studio',
+              message: '¿Cerrar PlayCue Studio?',
+              detail: 'Se detendrá la reproducción y se cerrarán las pantallas de salida.',
+            });
+            if (res.response === 1) {
+              isQuitting = true;
+              app.quit();
+            }
+          },
+        },
+      ])
+    );
+    tray.on('click', () => showMainWindow());
+    tray.on('double-click', () => showMainWindow());
+  } catch {}
 }
 
 function closeOutputWindows() {
@@ -205,7 +334,8 @@ function spawnSingleOutputBrowserWindow(
     resizable: !isBorderlessOrFull,
     movable: !isBorderlessOrFull,
     backgroundColor: '#000000',
-    title: `CuePro Output — ${viewportPayload.label || 'OUTPUT'}`,
+    title: `PlayCue Output — ${viewportPayload.label || 'OUTPUT'}`,
+    icon: getAppIconPath(),
     autoHideMenuBar: true,
     alwaysOnTop: isBorderlessOrFull,
     skipTaskbar: isBorderlessOrFull,
@@ -231,9 +361,18 @@ function spawnSingleOutputBrowserWindow(
     }
   }
 
+  // ESC on an output window is the PANIC key (blackout), exactly like in the operator console.
+  // Output windows are never closed by a key press; use the Output button / Configuración.
   win.webContents.on('before-input-event', (_event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'Escape' || input.key === 'F11')) {
-      closeOutputWindows();
+    if (input.type === 'keyDown' && !input.isAutoRepeat && input.key === 'Escape') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('remote-command', {
+          action: 'panic',
+          source: 'HTTP',
+          rawAddress: 'ESC (output window)',
+          timestamp: new Date().toLocaleTimeString('es-ES', { hour12: false }),
+        });
+      }
     }
   });
 
@@ -512,7 +651,30 @@ function notifyOutputStatus() {
   remoteServer?.updateTelemetry({ outputOpen: isOpen });
 }
 
+/**
+ * The app was renamed from "CuePro Studio" to "PlayCue Studio", which also renames the Electron
+ * userData folder. Carry over the user's autosaved show and first-run flag once, so nothing is lost.
+ * (The proxy cache is regenerable and is not copied.)
+ */
+function migrateLegacyUserData() {
+  try {
+    const newDir = app.getPath('userData');
+    const legacyDir = path.join(app.getPath('appData'), 'CuePro Studio');
+    if (path.resolve(newDir) === path.resolve(legacyDir) || !fs.existsSync(legacyDir)) return;
+    if (fs.existsSync(path.join(newDir, 'autosave_show.cueshow'))) return;
+    fs.mkdirSync(newDir, { recursive: true });
+    for (const name of ['autosave_show.cueshow', 'first_run_demos_initialized.flag']) {
+      const src = path.join(legacyDir, name);
+      const dest = path.join(newDir, name);
+      if (fs.existsSync(src) && !fs.existsSync(dest)) fs.copyFileSync(src, dest);
+    }
+  } catch {}
+}
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
+  migrateLegacyUserData();
+  initLogger();
   protocol.registerStreamProtocol('media', (request, callback) => {
     try {
       const urlObj = new URL(request.url);
@@ -533,8 +695,18 @@ app.whenReady().then(() => {
 
       if (rangeHeader) {
         const parts = rangeHeader.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+        let start = parseInt(parts[0], 10);
+        let end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+        if (Number.isNaN(start)) {
+          // suffix range "bytes=-N" => last N bytes
+          start = Math.max(0, totalSize - (Number.isNaN(end) ? 0 : end));
+          end = totalSize - 1;
+        }
+        if (Number.isNaN(end) || end >= totalSize) end = totalSize - 1;
+        if (start > end || start >= totalSize) {
+          callback({ statusCode: 416, headers: { 'Content-Range': `bytes */${totalSize}` } });
+          return;
+        }
         const chunksize = end - start + 1;
 
         callback({
@@ -570,6 +742,7 @@ app.whenReady().then(() => {
   });
 
   createMainWindow();
+  createTray();
 
   // Warm up hardware GPU detection & FFmpeg hardware encoder priority selection
   app
@@ -661,7 +834,7 @@ ipcMain.handle('get-remote-info', () => {
 ipcMain.handle('install-companion-module', () => {
   try {
     const appData = process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming');
-    const targetDir = path.join(appData, 'companion', 'modules', 'cuepro-studio-1.6.0');
+    const targetDir = path.join(appData, 'companion', 'modules', `playcue-studio-${app.getVersion()}`);
 
     let srcDir = path.join(__dirname, '../companion-module/dist-module');
     if (!fs.existsSync(srcDir)) {
@@ -867,10 +1040,13 @@ ipcMain.handle('save-show-file', async (_event, showDataJson: string, defaultNam
   const res = await dialog.showSaveDialog(mainWindow, {
     title: 'Guardar Proyecto',
     defaultPath: defaultName.endsWith('.cueshow') ? defaultName : `${defaultName}.cueshow`,
-    filters: [{ name: 'CuePro Show (*.cueshow)', extensions: ['cueshow', 'json'] }],
+    filters: [{ name: 'PlayCue Show (*.cueshow)', extensions: ['cueshow', 'json'] }],
   });
   if (res.canceled || !res.filePath) return null;
-  fs.writeFileSync(res.filePath, showDataJson, 'utf-8');
+  // Write atomically so a crash mid-save can't destroy an existing project
+  const tmp = `${res.filePath}.tmp`;
+  fs.writeFileSync(tmp, showDataJson, 'utf-8');
+  fs.renameSync(tmp, res.filePath);
   return res.filePath;
 });
 
@@ -879,7 +1055,7 @@ ipcMain.handle('open-show-file', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: 'Abrir Proyecto',
     properties: ['openFile'],
-    filters: [{ name: 'CuePro Show (*.cueshow, *.json)', extensions: ['cueshow', 'json'] }],
+    filters: [{ name: 'PlayCue Show (*.cueshow, *.json)', extensions: ['cueshow', 'json'] }],
   });
   if (res.canceled || res.filePaths.length === 0) return null;
   const filePath = res.filePaths[0];
@@ -887,10 +1063,26 @@ ipcMain.handle('open-show-file', async () => {
   return { filePath, content };
 });
 
+ipcMain.handle('log-set-project', (_event, name: string) => {
+  setLogProject(typeof name === 'string' ? name : 'General');
+});
+
+ipcMain.handle('log-write', (_event, level: string, source: string, message: string) => {
+  const lv = ['INFO', 'WARN', 'ERROR'].includes(level) ? level : 'INFO';
+  writeLog(lv, `ui:${String(source).slice(0, 30)}`, String(message));
+});
+
+ipcMain.handle('open-logs-folder', async () => {
+  fs.mkdirSync(getLogsRoot(), { recursive: true });
+  return shell.openPath(getLogsRoot());
+});
+
 ipcMain.handle('autosave-show', async (_event, showDataJson: string) => {
   try {
     const p = path.join(app.getPath('userData'), 'autosave_show.cueshow');
-    await fs.promises.writeFile(p, showDataJson, 'utf-8');
+    const tmp = `${p}.tmp`;
+    await fs.promises.writeFile(tmp, showDataJson, 'utf-8');
+    await fs.promises.rename(tmp, p);
     return true;
   } catch {
     return false;
@@ -907,6 +1099,11 @@ ipcMain.handle('load-autosave-show', () => {
   } catch {
     return null;
   }
+});
+
+// Real exits (tray "Salir", Windows shutdown / log-off, app.quit) must not be blocked by hide-to-tray
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

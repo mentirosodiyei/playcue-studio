@@ -33,15 +33,18 @@ import {
 interface CueListProps {
   cues: VideoCue[];
   selectedCueId: string | null;
+  /** All selected cue ids (multi-selection with Shift / Ctrl). Always includes selectedCueId when set. */
+  selectedCueIds: string[];
   previewCueId: string | null;
   programCueId: string | null;
   onSelectCue: (id: string) => void;
+  onSelectCues: (ids: string[], primaryId: string | null) => void;
   onLoadToPreview: (id: string) => void;
   onTakeCueToProgram: (id: string) => void;
   onUpdateCue: (id: string, patch: Partial<VideoCue>) => void;
-  onDeleteCue: (id: string) => void;
+  onDeleteCues: (ids: string[]) => void;
   onDuplicateCue: (id: string) => void;
-  onMoveCue: (index: number, direction: -1 | 1) => void;
+  onMoveCues: (ids: string[], direction: -1 | 1) => void;
   onReorderCues: (fromIndex: number, toIndex: number) => void;
   onAddVideos: () => void;
   onAddFolder: () => void;
@@ -53,15 +56,17 @@ interface CueListProps {
 export const CueList: React.FC<CueListProps> = ({
   cues,
   selectedCueId,
+  selectedCueIds,
   previewCueId,
   programCueId,
   onSelectCue,
+  onSelectCues,
   onLoadToPreview,
   onTakeCueToProgram,
   onUpdateCue,
-  onDeleteCue,
+  onDeleteCues,
   onDuplicateCue,
-  onMoveCue,
+  onMoveCues,
   onReorderCues,
   onAddVideos,
   onAddFolder,
@@ -85,7 +90,18 @@ export const CueList: React.FC<CueListProps> = ({
   } | null>(null);
 
   // Delete confirmation modal state
-  const [cueToConfirmDelete, setCueToConfirmDelete] = useState<VideoCue | null>(null);
+  const [cuesToConfirmDelete, setCuesToConfirmDelete] = useState<VideoCue[] | null>(null);
+
+  // Keep latest selection / cues available to the global key handler without re-subscribing
+  const selectionRef = useRef<string[]>(selectedCueIds);
+  selectionRef.current = selectedCueIds;
+  const cuesRef = useRef<VideoCue[]>(cues);
+  cuesRef.current = cues;
+
+  const requestDelete = (ids: string[]) => {
+    const targets = cuesRef.current.filter((c) => ids.includes(c.id));
+    if (targets.length > 0) setCuesToConfirmDelete(targets);
+  };
 
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
@@ -98,7 +114,18 @@ export const CueList: React.FC<CueListProps> = ({
       if (e.key === 'Escape') {
         setAddMenuOpen(false);
         setContextMenu(null);
-        setCueToConfirmDelete(null);
+        setCuesToConfirmDelete(null);
+        return;
+      }
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Delete' && selectionRef.current.length > 0) {
+        e.preventDefault();
+        requestDelete(selectionRef.current);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        const all = cuesRef.current.map((c) => c.id);
+        onSelectCues(all, all[0] ?? null);
       }
     };
     window.addEventListener('click', handleGlobalClick);
@@ -133,6 +160,36 @@ export const CueList: React.FC<CueListProps> = ({
           <span className="total-runtime-badge">
             TOTAL: {formatTimecode(totalShowDuration, 25, true)}
           </span>
+          {selectedCueIds.length > 1 && (
+            <div
+              className="total-runtime-badge"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              title="Selección múltiple: Shift = rango, Ctrl = añadir/quitar, Supr = eliminar"
+            >
+              <span>{selectedCueIds.length} seleccionados</span>
+              <button
+                className="row-icon-btn"
+                title="Subir selección"
+                onClick={() => onMoveCues(selectedCueIds, -1)}
+              >
+                <ArrowUp size={12} />
+              </button>
+              <button
+                className="row-icon-btn"
+                title="Bajar selección"
+                onClick={() => onMoveCues(selectedCueIds, 1)}
+              >
+                <ArrowDown size={12} />
+              </button>
+              <button
+                className="row-icon-btn danger"
+                title="Eliminar selección"
+                onClick={() => requestDelete(selectedCueIds)}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          )}
           <div className="search-input-wrap">
             <Search size={13} />
             <input
@@ -230,7 +287,13 @@ export const CueList: React.FC<CueListProps> = ({
         ) : (
           filteredCues.map((cue) => {
             const realIndex = cues.findIndex((x) => x.id === cue.id);
-            const isSelected = cue.id === selectedCueId;
+            const isSelected = selectedCueIds.includes(cue.id);
+            // Row buttons act on the whole selection when the row belongs to a multi-selection
+            const rowGroup =
+              isSelected && selectedCueIds.length > 1 ? selectedCueIds : [cue.id];
+            const groupIdx = rowGroup.map((id) => cues.findIndex((x) => x.id === id));
+            const canMoveUp = Math.min(...groupIdx) > 0;
+            const canMoveDown = Math.max(...groupIdx) < cues.length - 1;
             const isPrv = cue.id === previewCueId;
             const isPgm = cue.id === programCueId;
             const effectiveDur = getEffectiveCueDuration(cue);
@@ -272,14 +335,38 @@ export const CueList: React.FC<CueListProps> = ({
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onSelectCue(cue.id);
-                  const menuW = 210;
+                  // Right-click on an unselected row selects it; on a selected row keeps the selection
+                  if (!selectedCueIds.includes(cue.id)) onSelectCues([cue.id], cue.id);
+                  const menuW = 230;
                   const menuH = 92;
                   const posX = Math.min(e.clientX, window.innerWidth - menuW - 12);
                   const posY = Math.min(e.clientY, window.innerHeight - menuH - 12);
                   setContextMenu({ x: posX, y: posY, cue });
                 }}
-                onClick={() => {
+                onClick={(e) => {
+                  if (e.shiftKey) {
+                    // Range select from the primary (anchor) cue to the clicked one
+                    const anchorIdx = Math.max(
+                      0,
+                      cues.findIndex((x) => x.id === (selectedCueId ?? cue.id))
+                    );
+                    const [from, to] =
+                      anchorIdx <= realIndex ? [anchorIdx, realIndex] : [realIndex, anchorIdx];
+                    onSelectCues(
+                      cues.slice(from, to + 1).map((x) => x.id),
+                      selectedCueId ?? cue.id
+                    );
+                    return;
+                  }
+                  if (e.ctrlKey || e.metaKey) {
+                    if (selectedCueIds.includes(cue.id)) {
+                      const rest = selectedCueIds.filter((id) => id !== cue.id);
+                      onSelectCues(rest, rest[rest.length - 1] ?? null);
+                    } else {
+                      onSelectCues([...selectedCueIds, cue.id], cue.id);
+                    }
+                    return;
+                  }
                   onSelectCue(cue.id);
                   onLoadToPreview(cue.id);
                 }}
@@ -288,6 +375,7 @@ export const CueList: React.FC<CueListProps> = ({
                   isPrv ? 'is-prv' : ''
                 } ${dragOverIndex === realIndex ? 'drag-over' : ''}`}
                 style={{
+                  userSelect: 'none',
                   backgroundColor: isPgm
                     ? 'rgba(239, 68, 68, 0.14)'
                     : isPrv
@@ -338,6 +426,15 @@ export const CueList: React.FC<CueListProps> = ({
                       >
                         <Link size={11} /> RELINKEAR
                       </button>
+                    )}
+                    {cue.exists && cue.playbackError && (
+                      <span
+                        className="inline-warn-btn error"
+                        title={cue.playbackError}
+                        style={{ cursor: 'default' }}
+                      >
+                        ERROR DE REPRODUCCIÓN
+                      </span>
                     )}
                     {cue.exists && !cue.isNativeCompatible && !cue.proxyPath && (
                       <button
@@ -445,8 +542,29 @@ export const CueList: React.FC<CueListProps> = ({
                     <option value="black">BLACK (Ir a Negro)</option>
                     <option value="loop">LOOP (Bucle)</option>
                     <option value="next">PLAY NEXT (Siguiente)</option>
+                    <option value="goto">IR A (Saltar a Cue)</option>
                     <option value="stop">STOP (Limpiar)</option>
                   </select>
+                  {cue.endAction === 'goto' && (
+                    <select
+                      className="row-select end-select"
+                      style={{
+                        marginTop: 3,
+                        borderColor: END_ACTION_LABELS.goto.color,
+                        color: cue.gotoCueId ? END_ACTION_LABELS.goto.color : '#ef4444',
+                      }}
+                      value={cue.gotoCueId || ''}
+                      title="Cue al que se salta cuando este vídeo termina"
+                      onChange={(e) => onUpdateCue(cue.id, { gotoCueId: e.target.value || null })}
+                    >
+                      <option value="">— Elegir Cue destino —</option>
+                      {cues.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          → {t.cueNumber} · {t.name.slice(0, 28)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Quick Row Actions */}
@@ -467,17 +585,17 @@ export const CueList: React.FC<CueListProps> = ({
                   </button>
                   <button
                     className="row-icon-btn"
-                    onClick={() => onMoveCue(realIndex, -1)}
-                    disabled={realIndex === 0}
-                    title="Subir Cue"
+                    onClick={() => onMoveCues(rowGroup, -1)}
+                    disabled={!canMoveUp}
+                    title={rowGroup.length > 1 ? 'Subir los Cues seleccionados' : 'Subir Cue'}
                   >
                     <ArrowUp size={13} />
                   </button>
                   <button
                     className="row-icon-btn"
-                    onClick={() => onMoveCue(realIndex, 1)}
-                    disabled={realIndex === cues.length - 1}
-                    title="Bajar Cue"
+                    onClick={() => onMoveCues(rowGroup, 1)}
+                    disabled={!canMoveDown}
+                    title={rowGroup.length > 1 ? 'Bajar los Cues seleccionados' : 'Bajar Cue'}
                   >
                     <ArrowDown size={13} />
                   </button>
@@ -490,8 +608,12 @@ export const CueList: React.FC<CueListProps> = ({
                   </button>
                   <button
                     className="row-icon-btn danger"
-                    onClick={() => setCueToConfirmDelete(cue)}
-                    title="Delete (Eliminar del Cue List)"
+                    onClick={() => requestDelete(rowGroup)}
+                    title={
+                      rowGroup.length > 1
+                        ? `Eliminar los ${rowGroup.length} Cues seleccionados`
+                        : 'Delete (Eliminar del Cue List)'
+                    }
                   >
                     <Trash2 size={13} />
                   </button>
@@ -509,61 +631,83 @@ export const CueList: React.FC<CueListProps> = ({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            className="context-menu-item"
-            onClick={() => {
-              const target = contextMenu.cue;
-              setContextMenu(null);
-              onLocateCue(target);
-            }}
-          >
-            <FolderOpen size={14} className="cyan-text" />
-            <span>Locate (Abrir en carpeta)</span>
-          </button>
-          <div className="macos-dropdown-divider" />
+          {/* Locate only makes sense for a single file */}
+          {selectedCueIds.length <= 1 && (
+            <>
+              <button
+                className="context-menu-item"
+                onClick={() => {
+                  const target = contextMenu.cue;
+                  setContextMenu(null);
+                  onLocateCue(target);
+                }}
+              >
+                <FolderOpen size={14} className="cyan-text" />
+                <span>Locate (Abrir en carpeta)</span>
+              </button>
+              <div className="macos-dropdown-divider" />
+            </>
+          )}
           <button
             className="context-menu-item danger"
             onClick={() => {
-              const target = contextMenu.cue;
+              const ids = selectedCueIds.length > 1 ? selectedCueIds : [contextMenu.cue.id];
               setContextMenu(null);
-              setCueToConfirmDelete(target);
+              requestDelete(ids);
             }}
           >
             <Trash2 size={14} />
-            <span>Delete (Borrar de la app)</span>
+            <span>
+              {selectedCueIds.length > 1
+                ? `Eliminar ${selectedCueIds.length} Cues seleccionados`
+                : 'Delete (Borrar de la app)'}
+            </span>
           </button>
         </div>
       )}
 
       {/* Confirmation Modal for Deleting a Cue from the App */}
-      {cueToConfirmDelete && (
+      {cuesToConfirmDelete && cuesToConfirmDelete.length > 0 && (
         <div
           className="modal-backdrop"
-          onClick={() => setCueToConfirmDelete(null)}
+          onClick={() => setCuesToConfirmDelete(null)}
         >
           <div
             className="confirm-modal-card"
             onClick={(e) => e.stopPropagation()}
           >
-            <h4>¿Eliminar vídeo del Cue List?</h4>
+            <h4>
+              {cuesToConfirmDelete.length > 1
+                ? `¿Eliminar ${cuesToConfirmDelete.length} vídeos del Cue List?`
+                : '¿Eliminar vídeo del Cue List?'}
+            </h4>
             <p>
-              Se eliminará <strong>"{cueToConfirmDelete.name}"</strong> únicamente de la lista de la
-              aplicación. El archivo original <strong>no se borrará</strong> de la carpeta donde está
-              guardado.
+              {cuesToConfirmDelete.length > 1 ? (
+                <>
+                  Se eliminarán <strong>{cuesToConfirmDelete.length} vídeos</strong> únicamente de
+                  la lista de la aplicación.
+                </>
+              ) : (
+                <>
+                  Se eliminará <strong>"{cuesToConfirmDelete[0].name}"</strong> únicamente de la
+                  lista de la aplicación.
+                </>
+              )}{' '}
+              Los archivos originales <strong>no se borrarán</strong> de su carpeta.
             </p>
             <div className="confirm-modal-actions">
               <button
                 className="inspector-action-btn"
-                onClick={() => setCueToConfirmDelete(null)}
+                onClick={() => setCuesToConfirmDelete(null)}
               >
                 Cancelar
               </button>
               <button
                 className="inspector-action-btn danger-fill"
                 onClick={() => {
-                  const id = cueToConfirmDelete.id;
-                  setCueToConfirmDelete(null);
-                  onDeleteCue(id);
+                  const ids = cuesToConfirmDelete.map((c) => c.id);
+                  setCuesToConfirmDelete(null);
+                  onDeleteCues(ids);
                 }}
               >
                 <Trash2 size={13} />

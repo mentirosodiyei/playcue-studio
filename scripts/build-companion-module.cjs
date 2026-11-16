@@ -107,7 +107,7 @@ async function buildModule() {
   const modDir = path.join(rootDir, 'companion-module');
   const distDir = path.join(modDir, 'dist-module');
   const releaseDir = path.join(rootDir, 'release');
-  const releaseModDir = path.join(releaseDir, 'companion-module-cuepro-studio');
+  const releaseModDir = path.join(releaseDir, 'companion-module-playcue-studio');
   const pkgStagingDir = path.join(modDir, 'package');
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
@@ -139,7 +139,7 @@ async function buildModule() {
     path.join(distDir, 'companion', 'HELP.md')
   );
 
-  // Copy unpacked module into release/companion-module-cuepro-studio/
+  // Copy unpacked module into release/companion-module-playcue-studio/
   fs.copyFileSync(path.join(distDir, 'main.js'), path.join(releaseModDir, 'main.js'));
   fs.copyFileSync(path.join(distDir, 'package.json'), path.join(releaseModDir, 'package.json'));
   fs.copyFileSync(
@@ -183,7 +183,7 @@ async function buildModule() {
   }
 
   // Create .tgz package directly in release/ for Companion GUI "Import module package"
-  const releaseTgzPath = path.join(releaseDir, `companion-module-cuepro-studio-${version}.tgz`);
+  const releaseTgzPath = path.join(releaseDir, `companion-module-playcue-studio-${version}.tgz`);
   try {
     execSync(`tar -czf "${releaseTgzPath}" -C "${modDir}" package`, { stdio: 'inherit' });
     console.log('Created Companion importable package in release:', releaseTgzPath);
@@ -200,7 +200,7 @@ async function buildModule() {
     const companionModsDir = path.join(appData, 'companion', 'modules');
     if (fs.existsSync(path.join(appData, 'companion'))) {
       try {
-        const target = path.join(companionModsDir, `cuepro-studio-${version}`);
+        const target = path.join(companionModsDir, `playcue-studio-${version}`);
         fs.mkdirSync(path.join(target, 'companion'), { recursive: true });
         fs.copyFileSync(path.join(distDir, 'main.js'), path.join(target, 'main.js'));
         fs.copyFileSync(path.join(distDir, 'package.json'), path.join(target, 'package.json'));

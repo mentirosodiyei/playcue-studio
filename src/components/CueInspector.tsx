@@ -32,6 +32,7 @@ import { ASPECT_RATIO_OPTIONS, computeVideoBox } from '../utils/videoGeometry';
 
 interface CueInspectorProps {
   cue: VideoCue | null;
+  allCues?: VideoCue[];
   prvCurrentTime: number;
   totalCanvasWidth?: number;
   totalCanvasHeight?: number;
@@ -44,6 +45,7 @@ interface CueInspectorProps {
 
 export const CueInspector: React.FC<CueInspectorProps> = ({
   cue,
+  allCues = [],
   prvCurrentTime,
   totalCanvasWidth = 2560,
   totalCanvasHeight = 1440,
@@ -661,8 +663,31 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
                 <option value="black">BLACK — Ir a negro al terminar</option>
                 <option value="loop">LOOP — Bucle infinito entre In y Out</option>
                 <option value="next">PLAY NEXT — Encadenar con el siguiente vídeo</option>
+                <option value="goto">IR A — Saltar a otro Cue al terminar</option>
                 <option value="stop">STOP — Detener y limpiar salida</option>
               </select>
+              {cue.endAction === 'goto' && (
+                <>
+                  <select
+                    className="insp-select"
+                    style={{ marginTop: 6 }}
+                    value={cue.gotoCueId || ''}
+                    onChange={(e) => onUpdateCue(cue.id, { gotoCueId: e.target.value || null })}
+                  >
+                    <option value="">— Elegir Cue destino —</option>
+                    {allCues.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        → {t.cueNumber} · {t.name}
+                        {t.id === cue.id ? ' (este mismo cue)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: 11, opacity: 0.7, margin: '6px 0 0' }}>
+                    Al terminar este vídeo se lanza el cue destino con su propia transición. Para un
+                    bucle sin saltos, usa transición CUT en el destino. Sin destino, se queda en HOLD.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Playback Speed */}
@@ -716,7 +741,7 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
 
             <div className="insp-group">
               <div className="insp-label-flex">
-                <label className="insp-label">GANANCIA DEL CLIP (SNAP EN 0 dB)</label>
+                <label className="insp-label">GANANCIA DEL CLIP</label>
                 <span className={`db-readout ${cue.volume === 100 && !cue.muted ? 'zero-db' : ''}`}>
                   {gainToDbString(cue.volume, cue.muted)}
                 </span>

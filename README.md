@@ -1,6 +1,20 @@
-# CuePro Studio (v1.3.0)
+# PlayCue Studio (v1.6.1)
 
 Reproductor profesional de vídeo para eventos en directo en Windows, inspirado en el flujo de trabajo y diseño de **Mitti** y **PlaybackPro Plus**.
+
+## Novedades v1.6.1
+
+- **Acción "IR A" al terminar**: un cue puede saltar a otro cue concreto cuando acaba (`END ACTION → IR A`), lo que permite cerrar bucles entre varios vídeos (A → B → A…). Remoto: `/cue/goto <n>` (OSC/HTTP).
+- **GPU siempre la más potente**: se detectan las gráficas del equipo y se usa la dedicada si existe, o la integrada si es la única. La app se registra en *Configuración gráfica de Windows* como "Alto rendimiento".
+- **Vúmetros reales** con Web Audio, ganancia por encima de 0 dB funcional, el negro de la acción BLACK se quita con el siguiente TAKE, timecode según los fps del vídeo y avisos de error de reproducción.
+
+- **Blackout pausa el vídeo** y lo reanuda al quitarlo (PLAY también lo quita). **Freeze** congela la imagen en la salida mientras el clip sigue corriendo debajo (reloj y audio continúan). **ESC = limpiar salida**: detiene y descarga el programa (también en la ventana de salida); no activa el blackout.
+- **Cue List con multiselección**: Shift (rango), Ctrl (añadir/quitar), Ctrl+A, mover y eliminar varios a la vez (botón derecho o tecla Supr). *Locate* solo para un archivo.
+- **Configuración** (antes "Mosaico"): pantallas, modo de salida, **salida de audio** (Predeterminado del sistema por defecto) y lienzo virtual con la proporción real. La selección de pantalla ya no está en la barra superior.
+- **Sliders estilo macOS**, icono propio en exe/ventana/bandeja y **cierre con la X a la bandeja del sistema** (salir desde el icono de la bandeja → *Salir*).
+
+- **Instalador** (`PlayCue_Studio_Setup_<versión>.exe`): si ya hay una versión instalada se instala encima conservando proyectos y ajustes; se puede instalar una versión anterior para volver atrás.
+- **Log por proyecto**: `%APPDATA%\PlayCue Studio\logs\<proyecto>\<AAAA-MM-DD>.log` (arranque, TAKE, blackout/freeze/ESC, errores de vídeo, errores no controlados, fallos de abrir/guardar). Los archivos de más de 30 días se borran solos. Acceso rápido: icono de la bandeja → *Abrir carpeta de logs*.
 
 ## Características principales (v1.3.0)
 

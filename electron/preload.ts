@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openShowFile: () => ipcRenderer.invoke('open-show-file'),
   autosaveShow: (json: string) => ipcRenderer.invoke('autosave-show', json),
   loadAutosaveShow: () => ipcRenderer.invoke('load-autosave-show'),
+  logSetProject: (name: string) => ipcRenderer.invoke('log-set-project', name),
+  logWrite: (level: string, source: string, message: string) =>
+    ipcRenderer.invoke('log-write', level, source, message),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   getPathForFile: (file: File) => {
     try {
       return webUtils.getPathForFile(file);

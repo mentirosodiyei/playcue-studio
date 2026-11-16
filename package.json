@@ -1,10 +1,10 @@
 {
-  "name": "cuepro-studio",
-  "productName": "CuePro Studio",
-  "version": "1.6.0",
+  "name": "playcue-studio",
+  "productName": "PlayCue Studio",
+  "version": "1.6.1",
   "packageManager": "pnpm@9.15.4",
-  "description": "Reproductor profesional de vídeo para eventos en directo en Windows (Inspirado en Mitti y PlaybackPro Plus)",
-  "author": "CuePro Broadcast Systems",
+  "description": "Reproductor profesional de vídeo para eventos en directo",
+  "author": "PlayCue Broadcast Systems",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -33,9 +33,9 @@
     "vite": "^5.4.11"
   },
   "build": {
-    "appId": "com.cuepro.studio",
-    "productName": "CuePro Studio",
-    "copyright": "Copyright © 2026 CuePro Studio",
+    "appId": "com.playcue.studio",
+    "productName": "PlayCue Studio",
+    "copyright": "Copyright © 2026 PlayCue Studio",
     "asar": true,
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
@@ -49,6 +49,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "files": [
@@ -75,7 +79,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": true
     },
     "nsis": {
       "oneClick": false,
@@ -83,11 +87,17 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CuePro Studio",
-      "artifactName": "CuePro_Studio_Setup_${version}.exe"
+      "shortcutName": "PlayCue Studio",
+      "guid": "7b1e5c52-3a9d-4f0e-9c1a-5d2f8e6a41b7",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "language": "3082",
+      "artifactName": "PlayCue_Studio_Setup_${version}.exe"
     },
     "portable": {
-      "artifactName": "CuePro_Studio_Portable_${version}.exe"
+      "artifactName": "PlayCue_Studio_Portable_${version}.exe"
     }
   }
 }

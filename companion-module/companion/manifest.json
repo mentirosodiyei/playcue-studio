@@ -1,15 +1,15 @@
 {
-  "id": "cuepro-studio",
-  "name": "CuePro Studio",
-  "shortname": "cuepro",
-  "description": "Reproductor profesional de vídeo y Mosaico Multi-Salida para Windows (Mitti / PlaybackPro+ style)",
-  "version": "1.6.0",
+  "id": "playcue-studio",
+  "name": "PlayCue Studio",
+  "shortname": "playcue",
+  "description": "Reproductor profesional de vídeo para eventos en directo",
+  "version": "1.6.1",
   "license": "MIT",
-  "repository": "git+https://github.com/mentirosodiyei/cuepro-studio.git",
-  "bugs": "https://github.com/mentirosodiyei/cuepro-studio/issues",
+  "repository": "git+https://github.com/mentirosodiyei/playcue-studio.git",
+  "bugs": "https://github.com/mentirosodiyei/playcue-studio/issues",
   "maintainers": [
     {
-      "name": "CuePro Broadcast Systems",
+      "name": "PlayCue Broadcast Systems",
       "email": "mentiroso.correobasura@gmail.com"
     }
   ],
@@ -20,7 +20,7 @@
     "apiVersion": "1.8.0",
     "entrypoint": "../main.js"
   },
-  "manufacturer": "CuePro",
-  "products": ["CuePro Studio"],
+  "manufacturer": "PlayCue",
+  "products": ["PlayCue Studio"],
   "keywords": ["Video", "Playback", "Mitti", "PlaybackPro", "Broadcast", "Mosaic"]
 }

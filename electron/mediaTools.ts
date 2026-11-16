@@ -383,6 +383,17 @@ export async function detectHardwareProfile(electronGpuInfo?: any): Promise<Hard
             : '');
         if (!rawName) continue;
         const key = rawName.toLowerCase().trim();
+        // Electron may report only a vendor id (generic fallback name). If WMI already listed an
+        // adapter of that vendor, skip it so the same physical GPU doesn't appear twice.
+        const isGenericName = !dev.deviceString && !dev.driverDescription;
+        const devVendor =
+          dev.vendorId === 0x10de ? 'nvidia' : dev.vendorId === 0x1002 ? 'amd' : dev.vendorId === 0x8086 ? 'intel' : 'other';
+        if (
+          isGenericName &&
+          Array.from(mergedMap.values()).some((g) => g.vendor === devVendor)
+        ) {
+          continue;
+        }
         if (!mergedMap.has(key)) {
           mergedMap.set(
             key,
@@ -495,6 +506,8 @@ export async function detectHardwareProfile(electronGpuInfo?: any): Promise<Hard
   return hardwareDetectionPromise;
 }
 
+const remuxInFlight = new Map<string, Promise<string | undefined>>();
+
 /**
  * Fast universal audio remuxer using bundled FFmpeg codec pack:
  * Copies compatible video stream (-c:v copy) and decodes any audio codec
@@ -524,7 +537,12 @@ export async function ensurePlayableAudioRemux(
       return outputPath;
     }
 
-    return await new Promise((resolve) => {
+    const inFlight = remuxInFlight.get(outputPath);
+    if (inFlight) return await inFlight;
+
+    // Render to a temp file and rename on success so a crash never leaves a truncated cache hit
+    const tmpPath = outputPath.replace(/\.mp4$/, '.part.mp4');
+    const job = new Promise<string | undefined>((resolve) => {
       const ffmpeg = getFfmpegPath();
       const args = [
         '-y',
@@ -546,18 +564,28 @@ export async function ensurePlayableAudioRemux(
         '2',
         '-movflags',
         '+faststart',
-        outputPath,
+        tmpPath,
       ];
       const proc = spawn(ffmpeg, args, { windowsHide: true });
       proc.on('error', () => resolve(undefined));
       proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
-          resolve(outputPath);
-        } else {
-          resolve(undefined);
-        }
+        try {
+          if (code === 0 && fs.existsSync(tmpPath) && fs.statSync(tmpPath).size > 1024) {
+            fs.renameSync(tmpPath, outputPath);
+            resolve(outputPath);
+            return;
+          }
+          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch {}
+        resolve(undefined);
       });
     });
+    remuxInFlight.set(outputPath, job);
+    try {
+      return await job;
+    } finally {
+      remuxInFlight.delete(outputPath);
+    }
   } catch {
     return undefined;
   }
@@ -607,6 +635,13 @@ export async function probeMediaFile(
 
     const proc = spawn(ffprobe, args, { windowsHide: true });
     let stdout = '';
+    // Don't let a stalled file (e.g. dropped network drive) block imports forever
+    const killTimer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {}
+    }, 30000);
+    proc.on('close', () => clearTimeout(killTimer));
 
     proc.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
@@ -786,6 +821,12 @@ export async function extractThumbnail(
 
     const proc = spawn(ffmpeg, args, { windowsHide: true });
     const chunks: Buffer[] = [];
+    const killTimer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {}
+    }, 20000);
+    proc.on('close', () => clearTimeout(killTimer));
 
     proc.stdout.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     proc.on('error', () => resolve(undefined));
@@ -835,6 +876,7 @@ export async function transcodeToPlayableMp4(
     targetCodec === 'prores' || audioCodec === 'pcm_s16le' || audioCodec === 'pcm_s24le';
   const extOut = needsMovContainer ? 'mov' : 'mp4';
   const outputPath = path.join(cacheDir, `${baseName}_${hash}_${optSig}.${extOut}`);
+  const tmpOutputPath = outputPath.replace(/\.(mp4|mov)$/, '.part.$1');
 
   if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
     onProgress(100);
@@ -975,7 +1017,7 @@ export async function transcodeToPlayableMp4(
         ...containerFlags,
         '-progress',
         'pipe:1',
-        outputPath,
+        tmpOutputPath,
       ];
 
       const proc = spawn(ffmpeg, args, { windowsHide: true });
@@ -992,12 +1034,16 @@ export async function transcodeToPlayableMp4(
 
       proc.on('error', (err) => reject(err));
       proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
-          onProgress(100);
-          resolve(outputPath);
-        } else {
-          reject(new Error(`FFmpeg exited with code ${code}`));
-        }
+        try {
+          if (code === 0 && fs.existsSync(tmpOutputPath) && fs.statSync(tmpOutputPath).size > 1024) {
+            fs.renameSync(tmpOutputPath, outputPath);
+            onProgress(100);
+            resolve(outputPath);
+            return;
+          }
+          if (fs.existsSync(tmpOutputPath)) fs.unlinkSync(tmpOutputPath);
+        } catch {}
+        reject(new Error(`FFmpeg exited with code ${code}`));
       });
     });
 

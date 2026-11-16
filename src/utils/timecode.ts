@@ -1,14 +1,20 @@
 import { VideoCue, CueColor } from '../types/cue';
 
+function sanitizeFps(fps: number | undefined | null): number {
+  return Number.isFinite(fps) && (fps as number) >= 1 && (fps as number) <= 240 ? (fps as number) : 25;
+}
+
 export function formatTimecode(seconds: number, fps = 25, includeHours = false): string {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  fps = sanitizeFps(fps);
   const totalSeconds = Math.floor(seconds);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
+  // Epsilon keeps parse -> format round trips exact (e.g. frame 10 / 29.97 must not become frame 9)
   const frames = Math.min(
-    Math.floor(fps) - 1,
-    Math.max(0, Math.floor((seconds - totalSeconds) * fps))
+    Math.round(fps) - 1,
+    Math.max(0, Math.floor((seconds - totalSeconds) * fps + 1e-6))
   );
 
   const hh = String(hours).padStart(2, '0');
@@ -22,31 +28,44 @@ export function formatTimecode(seconds: number, fps = 25, includeHours = false):
   return `${mm}:${ss}.${ff}`;
 }
 
-export function parseTimecodeInput(input: string, maxDuration: number): number | null {
+/**
+ * Parses what formatTimecode() prints, using the clip's own frame rate:
+ *   "12.5"        -> 12.5 seconds (plain decimal number)
+ *   "MM:SS"       -> minutes/seconds
+ *   "MM:SS.ff" / "MM:SS:ff"        -> frames at `fps`
+ *   "HH:MM:SS.ff" / "HH:MM:SS:ff"  -> frames at `fps`
+ * Frame counts at or above the frame rate are rejected (null) instead of silently overflowing.
+ */
+export function parseTimecodeInput(
+  input: string,
+  maxDuration: number,
+  fps = 25
+): number | null {
   const clean = input.trim();
   if (!clean) return null;
-  // Accept seconds directly like "12.5"
-  if (/^\d+(\.\d+)?$/.test(clean)) {
-    const val = parseFloat(clean);
-    return Math.max(0, Math.min(maxDuration, val));
-  }
-  // Accept MM:SS.ff or HH:MM:SS.ff
-  const parts = clean.replace('.', ':').split(':').map(Number);
-  if (parts.some((n) => Number.isNaN(n))) return null;
+  fps = sanitizeFps(fps);
+  const clamp = (s: number) => Math.max(0, Math.min(maxDuration, s));
 
-  let seconds = 0;
-  if (parts.length === 2) {
-    seconds = parts[0] * 60 + parts[1];
-  } else if (parts.length === 3) {
-    // MM:SS:FF
-    seconds = parts[0] * 60 + parts[1] + parts[2] / 25;
-  } else if (parts.length === 4) {
-    // HH:MM:SS:FF
-    seconds = parts[0] * 3600 + parts[1] * 60 + parts[2] + parts[3] / 25;
-  } else {
-    return null;
+  if (/^\d+(\.\d+)?$/.test(clean)) {
+    return clamp(parseFloat(clean));
   }
-  return Math.max(0, Math.min(maxDuration, seconds));
+
+  // Treat ".", ";" (drop-frame notation) and ":" as separators; only digits allowed
+  if (!/^\d+([:.;]\d+){1,3}$/.test(clean)) return null;
+  const parts = clean.split(/[:.;]/).map((n) => parseInt(n, 10));
+  const frameLimit = Math.round(fps);
+
+  let seconds: number;
+  if (parts.length === 2) {
+    seconds = parts[0] * 60 + parts[1]; // MM:SS
+  } else if (parts.length === 3) {
+    if (parts[2] >= frameLimit) return null;
+    seconds = parts[0] * 60 + parts[1] + parts[2] / fps; // MM:SS.ff
+  } else {
+    if (parts[3] >= frameLimit) return null;
+    seconds = parts[0] * 3600 + parts[1] * 60 + parts[2] + parts[3] / fps; // HH:MM:SS.ff
+  }
+  return clamp(seconds);
 }
 
 export function formatBytes(bytes: number): string {
@@ -129,6 +148,11 @@ export const END_ACTION_LABELS: Record<VideoCue['endAction'], { short: string; f
     short: 'PLAY NEXT (Siguiente)',
     full: 'Lanzar siguiente Cue automáticamente (Auto-Follow)',
     color: '#f59e0b',
+  },
+  goto: {
+    short: 'IR A (Saltar a Cue)',
+    full: 'Saltar a otro Cue al terminar (permite cerrar bucles entre vídeos)',
+    color: '#a855f7',
   },
   stop: {
     short: 'STOP (Limpiar)',

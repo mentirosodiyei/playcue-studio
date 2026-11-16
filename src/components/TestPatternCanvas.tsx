@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { MosaicMode } from '../types/cue';
 
 interface TestPatternCanvasProps {
@@ -7,10 +7,13 @@ interface TestPatternCanvasProps {
   canvasWidth?: number;
   canvasHeight?: number;
   mosaicMode?: MosaicMode;
+  /** When false the animation loop is stopped (used while the layer is kept mounted but hidden). */
+  active?: boolean;
 }
 
 export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
-  showName = 'CuePro Studio',
+  active = true,
+  showName = 'PlayCue Studio',
   label,
   canvasWidth = 1920,
   canvasHeight = 1080,
@@ -23,7 +26,8 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
   const internalW = aspect >= 2.2 ? 3840 : 1920;
   const internalH = Math.round(internalW / aspect);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active) return; // keep the canvas mounted but idle while the pattern is off
     let animId = 0;
     const startTime = performance.now();
 
@@ -198,9 +202,11 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
       animId = requestAnimationFrame(render);
     };
 
-    animId = requestAnimationFrame(render);
+    // Paint the first frame synchronously (before the browser paints) so switching the pattern
+    // on never shows an empty/transparent canvas for one frame
+    render(performance.now());
     return () => cancelAnimationFrame(animId);
-  }, [showName, label, canvasWidth, canvasHeight, mosaicMode]);
+  }, [active, showName, label, canvasWidth, canvasHeight, mosaicMode]);
 
   return (
     <canvas
@@ -212,7 +218,7 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
         height: '100%',
         objectFit: 'fill',
         display: 'block',
-        backgroundColor: '#000',
+        backgroundColor: '#0a0e17',
       }}
     />
   );
