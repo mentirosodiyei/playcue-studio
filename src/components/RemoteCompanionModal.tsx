@@ -103,7 +103,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
           >
             <div>
               <strong style={{ color: '#34d399', fontSize: 12 }}>
-                {tr("MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.6.3)")}
+                {tr("MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.6.4)")}
               </strong>
               <div style={{ color: '#cbd5e1', fontSize: 11, marginTop: 2 }}>
                 {tr("Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a Programa (PGM con transición de la app), Botón TAKE, Cuenta Atrás con colores, Transiciones, End-Actions y Mosaico 2×1/1×2.")}

@@ -169,6 +169,10 @@ const OperatorConsole: React.FC = () => {
   }>({ oscPort: 51000, httpPort: 51080, ips: ['127.0.0.1'] });
   const [remoteLogs, setRemoteLogs] = useState<RemoteCommandLog[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  // Import progress shown while files are being added ("2/5 name")
+  const [importStatus, setImportStatus] = useState<{ done: number; total: number; name: string } | null>(null);
+  const previewCueIdRef = useRef<string | null>(null);
+  previewCueIdRef.current = previewCueId;
   const [hardwareInfo, setHardwareInfo] = useState<HardwareProfileInfo | null>(null);
 
   // Refs for real-time 60fps loop access
@@ -1702,19 +1706,32 @@ const OperatorConsole: React.FC = () => {
 
   // Import video files by paths
   const importFilePaths = async (paths: string[]) => {
-    if (!window.electronAPI || paths.length === 0) return;
-    const newCues: VideoCue[] = [];
-    const baseCount = cues.length;
+    if (!window.electronAPI) return;
+    if (paths.length === 0) return;
+    const failures: string[] = [];
+    let added = 0;
+    const baseCount = cuesRef.current.length;
+    logEvent('INFO', 'import', `Añadiendo ${paths.length} archivo(s)`);
 
     for (let i = 0; i < paths.length; i++) {
       const filePath = paths[i];
+      const shortName = filePath.split(/[\\/]/).pop() || filePath;
+      setImportStatus({ done: i, total: paths.length, name: shortName });
       let probe;
       try {
         probe = await window.electronAPI.probeMedia(filePath);
-      } catch {
-        continue; // skip files that fail to probe instead of aborting the whole import
+      } catch (e: any) {
+        // keep importing the rest, but tell the user what went wrong
+        failures.push(`${shortName}: ${e?.message || e}`);
+        logEvent('ERROR', 'import', `${filePath}: ${e?.message || e}`);
+        continue;
       }
-      const cueNum = String(baseCount + i + 1).padStart(2, '0');
+      if (!probe || !probe.exists) {
+        failures.push(`${shortName}: ${tr('No se encuentra el archivo.')}`);
+        logEvent('ERROR', 'import', `${filePath}: file not found`);
+        continue;
+      }
+      const cueNum = String(baseCount + added + 1).padStart(2, '0');
       const cleanName = probe.fileName.replace(/\.[^/.]+$/, '');
 
       const cue: VideoCue = {
@@ -1774,30 +1791,50 @@ const OperatorConsole: React.FC = () => {
         color: 'none',
         notes: '',
       };
-      newCues.push(cue);
+      // Show each cue as soon as it is ready (big files may need a moment to prepare their audio)
+      setCues((prev) => [...prev, cue]);
+      if (added === 0 && !previewCueIdRef.current) {
+        previewCueIdRef.current = cue.id;
+        setPreviewCueId(cue.id);
+        setSelectedCueId(cue.id);
+      }
+      added++;
+      logEvent('INFO', 'import', `Añadido: ${probe.fileName} (${probe.videoCodec}, ${probe.container})`);
     }
 
-    if (newCues.length === 0) return;
-    setCues((prev) => [...prev, ...newCues]);
-    if (!previewCueId) {
-      setPreviewCueId(newCues[0].id);
-      setSelectedCueId(newCues[0].id);
+    setImportStatus(null);
+    if (failures.length > 0) {
+      window.alert(
+        tr('No se pudieron añadir {n} archivo(s):', { n: failures.length }) + '\n\n' + failures.slice(0, 8).join('\n')
+      );
     }
   };
 
   const handleAddVideos = async () => {
     if (!window.electronAPI) return;
-    const paths = await window.electronAPI.selectVideoFiles();
-    if (paths && paths.length > 0) {
-      await importFilePaths(paths);
+    try {
+      const paths = await window.electronAPI.selectVideoFiles();
+      if (paths && paths.length > 0) {
+        await importFilePaths(paths);
+      }
+    } catch (e: any) {
+      setImportStatus(null);
+      logEvent('ERROR', 'import', `selectVideoFiles: ${e?.message || e}`);
+      window.alert(tr('No se pudieron añadir los vídeos: {err}', { err: e?.message || e }));
     }
   };
 
   const handleAddFolder = async () => {
     if (!window.electronAPI) return;
-    const paths = await window.electronAPI.selectVideoFolder();
-    if (paths && paths.length > 0) {
-      await importFilePaths(paths);
+    try {
+      const paths = await window.electronAPI.selectVideoFolder();
+      if (paths && paths.length > 0) {
+        await importFilePaths(paths);
+      }
+    } catch (e: any) {
+      setImportStatus(null);
+      logEvent('ERROR', 'import', `selectVideoFolder: ${e?.message || e}`);
+      window.alert(tr('No se pudieron añadir los vídeos: {err}', { err: e?.message || e }));
     }
   };
 
@@ -2086,11 +2123,25 @@ const OperatorConsole: React.FC = () => {
     const rawPaths = files
       .map((f) => window.electronAPI!.getPathForFile(f))
       .filter((p) => !!p);
-    if (rawPaths.length > 0) {
+    if (rawPaths.length === 0) {
+      logEvent('ERROR', 'import', 'Drop without file paths');
+      window.alert(tr('No se pudo leer la ruta de lo que has soltado. Usa el botón «Añadir Vídeos».'));
+      return;
+    }
+    try {
       const expanded = await window.electronAPI.expandDroppedPaths(rawPaths);
       if (expanded && expanded.length > 0) {
         await importFilePaths(expanded);
+      } else {
+        logEvent('WARN', 'import', `Drop without compatible videos: ${rawPaths.join(' | ')}`);
+        window.alert(
+          tr('No se han encontrado vídeos compatibles en lo que has soltado (MP4, MOV, MKV, WebM, AVI, MXF, M4V, WMV, MPG, TS, FLV, OGV).')
+        );
       }
+    } catch (e: any) {
+      setImportStatus(null);
+      logEvent('ERROR', 'import', `drop: ${e?.message || e}`);
+      window.alert(tr('No se pudieron añadir los vídeos: {err}', { err: e?.message || e }));
     }
   };
 
@@ -2219,10 +2270,39 @@ const OperatorConsole: React.FC = () => {
       onDrop={handleDropFiles}
     >
       {isDraggingOver && (
-        <div className="dropzone-overlay">
+        <div className="dropzone-overlay" style={{ pointerEvents: "none" }}>
           <div className="dropzone-box">
             <h2>{tr("SOLTAR VÍDEOS O CARPETAS PARA AÑADIR AL CUE LIST")}</h2>
             <p>{tr("Soporte directo para MP4, MOV (ProRes/H.264), MKV, WebM, AVI, MXF")}</p>
+          </div>
+        </div>
+      )}
+
+      {importStatus && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 18,
+            transform: 'translateX(-50%)',
+            zIndex: 400,
+            background: 'rgba(15, 23, 42, 0.96)',
+            border: '1px solid #38bdf8',
+            borderRadius: 8,
+            padding: '8px 14px',
+            color: '#e2e8f0',
+            fontSize: 12,
+            maxWidth: '80vw',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.5)',
+          }}
+        >
+          <strong>
+            {tr('Añadiendo vídeos {done}/{total}', { done: importStatus.done + 1, total: importStatus.total })}
+          </strong>
+          {' · '}
+          <span style={{ color: '#94a3b8' }}>{importStatus.name}</span>
+          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+            {tr('Los archivos grandes pueden tardar mientras se prepara su audio.')}
           </div>
         </div>
       )}

@@ -1,10 +1,14 @@
-# PlayCue Studio (v1.6.3)
+# PlayCue Studio (v1.6.4)
 
 Professional video player for live events on Windows, inspired by the workflow and design of **Mitti** and **PlaybackPro Plus**.
 
 The app speaks **English, Spanish and Catalan**. It follows the Windows display language: Catalan systems get Catalan, Spanish systems get Spanish, and any other language gets English.
 
-## What's new in v1.6.3
+## What's new in v1.6.4
+
+- **Adding videos is now visible and never silent**: a progress banner shows while files are added (big files can take a while while their audio is prepared), each clip appears as soon as it is ready, and any file that can't be added is reported with the reason (also written to the log). Dropping files that aren't videos now says so instead of doing nothing.
+
+## v1.6.3
 
 - **Scheduled show start**: in *Settings* choose *manual / when the app opens / a specific date and time / every day at a time*; the show then enables the outputs and launches the first cue by itself. The schedule is saved with the show. Optional *start the app with the system* (installed or portable build).
 - **Precise playback errors**: when a clip can't be played the app now says exactly why (file not found, no permission, empty file, damaged file, unsupported format, read error) in the Cue List, the inspector and over the monitor.
