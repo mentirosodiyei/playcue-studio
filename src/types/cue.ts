@@ -284,6 +284,14 @@ declare global {
       logWrite: (level: string, source: string, message: string) => Promise<void>;
       openLogsFolder: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;
+      getUpdateSettings: () => Promise<{ auto: boolean; version: string }>;
+      setAutoUpdateCheck: (auto: boolean) => Promise<boolean>;
+      checkForUpdates: () => Promise<{
+        status: 'uptodate' | 'available' | 'deferred' | 'skipped' | 'error' | 'busy';
+        current: string;
+        latest?: string;
+        error?: string;
+      }>;
       loadAutosaveShow: () => Promise<string | null>;
       getPathForFile: (file: File) => string;
       onDisplaysUpdated: (cb: (displays: DisplayInfo[]) => void) => () => void;

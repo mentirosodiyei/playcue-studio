@@ -97,6 +97,12 @@
       "installerLanguages": ["en_US", "es_ES"],
       "artifactName": "PlayCue_Studio_Setup_${version}.exe"
     },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.video",
+      "icon": "build/icon.png",
+      "artifactName": "PlayCue_Studio_${version}_${arch}.${ext}"
+    },
     "portable": {
       "artifactName": "PlayCue_Studio_Portable_${version}.exe"
     }

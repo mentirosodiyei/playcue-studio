@@ -39,6 +39,74 @@ interface MosaicSetupModalProps {
   onApplyAndLaunchOutput: (windowed?: boolean) => void;
 }
 
+/** Update checks: automatic-check toggle, manual check button and result line. */
+const UpdateSection: React.FC = () => {
+  const [auto, setAuto] = React.useState(true);
+  const [version, setVersion] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  React.useEffect(() => {
+    void window.electronAPI?.getUpdateSettings?.().then((s) => {
+      if (!s) return;
+      setAuto(s.auto);
+      setVersion(s.version);
+    });
+  }, []);
+
+  const check = async () => {
+    setBusy(true);
+    setMsg(tr('Buscando actualizaciones...'));
+    try {
+      const r = await window.electronAPI?.checkForUpdates?.();
+      if (!r) setMsg(tr('No se pudo comprobar. Revisa tu conexión a Internet.'));
+      else if (r.status === 'uptodate') setMsg(tr('Tienes la última versión.'));
+      else if (r.status === 'available') setMsg(tr('Hay una versión nueva: {v}', { v: r.latest ?? '' }));
+      else if (r.status === 'busy') setMsg(tr('Ya se está buscando...'));
+      else setMsg(tr('No se pudo comprobar. Revisa tu conexión a Internet.'));
+    } catch {
+      setMsg(tr('No se pudo comprobar. Revisa tu conexión a Internet.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        gap: 12,
+        margin: '14px 0 10px',
+        fontSize: 12,
+        color: '#cbd5e1',
+      }}
+    >
+      <span style={{ fontWeight: 700, color: '#94a3b8' }}>
+        {tr('ACTUALIZACIONES')}
+        {version ? ` · v${version}` : ''}
+      </span>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={auto}
+          onChange={(e) => {
+            setAuto(e.target.checked);
+            void window.electronAPI?.setAutoUpdateCheck?.(e.target.checked);
+          }}
+        />
+        {tr('Buscar actualizaciones automáticamente')}
+      </label>
+      <button className="top-btn" disabled={busy} onClick={check}>
+        <span>{tr('Buscar ahora')}</span>
+      </button>
+      {msg && <span style={{ color: '#38bdf8' }}>{msg}</span>}
+    </div>
+  );
+};
+
 export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
   isOpen,
   onClose,
@@ -484,6 +552,8 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
               </span>
             </button>
           </div>
+
+          <UpdateSection />
 
           {/* Credits */}
           <div

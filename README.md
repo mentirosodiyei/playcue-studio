@@ -14,6 +14,7 @@ The app speaks **English, Spanish and Catalan**. It follows the Windows display 
 - **Settings** (formerly "Mosaic"): displays, output mode, **audio output** (System default is the base option) and a virtual canvas preview with the real aspect ratio. Display selection is no longer in the top bar.
 - **macOS-style sliders and scrollbars**, its own icon in the exe / window / tray, and **closing with the X sends the app to the system tray** (quit from the tray icon → *Quit*).
 - **Installer** (`PlayCue_Studio_Setup_<version>.exe`): if a version is already installed it installs over it, keeping your projects and settings. You can run the installer of an older version to go back. A portable build is also provided.
+- **Automatic updates**: the app checks the latest GitHub release every few hours (and at startup). If a newer version exists it asks you: *Download and install*, *Later* or *Skip this version*. On Windows (installed build) it downloads the installer, verifies it and installs over the current version; on macOS and the portable build it opens the download page. It never interrupts a running show, and the check can be turned off or run manually in *Settings*.
 - **Per-project log**: `%APPDATA%\PlayCue Studio\logs\<project>\<YYYY-MM-DD>.log` (startup, TAKE, blackout/freeze/ESC, video errors, unhandled errors, open/save failures). Files older than 30 days are deleted automatically. Quick access: tray icon → *Open logs folder*.
 
 ## Main features (v1.3.0)

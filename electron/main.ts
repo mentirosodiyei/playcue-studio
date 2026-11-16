@@ -25,6 +25,7 @@ import {
 import { trm } from './i18n';
 import { RemoteControlServer, LiveShowTelemetry } from './osc';
 import { initLogger, setLogProject, writeLog, getLogsRoot } from './logger';
+import { startUpdateChecks, checkForUpdates, getUpdateSettings, setAutoCheck } from './updater';
 
 // Register media:// privileged scheme before app ready
 protocol.registerSchemesAsPrivileged([
@@ -676,6 +677,13 @@ app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return;
   migrateLegacyUserData();
   initLogger();
+  startUpdateChecks({
+    getWindow: () => mainWindow,
+    isPlaying: () => programPlaying,
+    setQuitting: () => {
+      isQuitting = true;
+    },
+  });
   protocol.registerStreamProtocol('media', (request, callback) => {
     try {
       const urlObj = new URL(request.url);
@@ -824,9 +832,19 @@ ipcMain.on('sync-output-state', (_event, state) => {
   }
 });
 
+let programPlaying = false;
 ipcMain.on('update-telemetry', (_event, telemetry: Partial<LiveShowTelemetry>) => {
+  if (typeof telemetry?.isPlaying === 'boolean') programPlaying = telemetry.isPlaying;
   remoteServer?.updateTelemetry(telemetry);
 });
+
+ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('update-get-settings', () => ({ auto: getUpdateSettings().auto, version: app.getVersion() }));
+ipcMain.handle('update-set-auto', (_event, auto: boolean) => {
+  setAutoCheck(!!auto);
+  return getUpdateSettings().auto;
+});
+ipcMain.handle('update-check', () => checkForUpdates(true));
 
 ipcMain.handle('get-remote-info', () => {
   return remoteServer?.getServerInfo() || { oscPort: 51000, httpPort: 51080, ips: ['127.0.0.1'] };

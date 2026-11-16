@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('log-write', level, source, message),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  getUpdateSettings: () => ipcRenderer.invoke('update-get-settings'),
+  setAutoUpdateCheck: (auto: boolean) => ipcRenderer.invoke('update-set-auto', auto),
+  checkForUpdates: () => ipcRenderer.invoke('update-check'),
   getPathForFile: (file: File) => {
     try {
       return webUtils.getPathForFile(file);
