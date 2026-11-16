@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logWrite: (level: string, source: string, message: string) =>
     ipcRenderer.invoke('log-write', level, source, message),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   getPathForFile: (file: File) => {
     try {
       return webUtils.getPathForFile(file);

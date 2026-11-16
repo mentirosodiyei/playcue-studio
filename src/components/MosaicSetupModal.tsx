@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { DisplayInfo, MosaicConfig, MosaicMode } from '../types/cue';
 
+import { tr } from '../i18n';
+
+const PROJECT_URL = 'https://github.com/mentirosodiyei/playcue-studio';
+
 export interface AudioOutputDevice {
   id: string;
   label: string;
@@ -107,16 +111,16 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
         <div className="modal-header">
           <div className="modal-title">
             <Settings size={18} className="cyan-text" />
-            <span>Configuración</span>
+            <span>{tr("Configuración")}</span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               className="top-btn"
               onClick={onRefreshDisplays}
-              title="Volver a detectar pantallas y resoluciones en Windows"
+              title={tr("Volver a detectar pantallas y resoluciones en Windows")}
             >
               <RefreshCw size={13} />
-              <span>Detectar pantallas</span>
+              <span>{tr("Detectar pantallas")}</span>
             </button>
             <button className="row-icon-btn" onClick={onClose}>
               <X size={16} />
@@ -128,7 +132,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
           {/* 1. Detected Displays in Windows */}
           <div>
             <div className="insp-label" style={{ marginBottom: 6 }}>
-              SALIDAS DE VÍDEO DETECTADAS ({displays.length} CONECTADAS)
+              {tr("SALIDAS DE VÍDEO DETECTADAS (")}{displays.length} {tr("CONECTADAS)")}
             </div>
             <div className="detected-displays-grid">
               {displays.map((d, idx) => (
@@ -137,23 +141,23 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                   className={`detected-display-card ${d.isPrimary ? 'primary' : 'external'}`}
                 >
                   <div className="dd-top">
-                    <span className="dd-index">PANTALLA #{idx + 1}</span>
+                    <span className="dd-index">{tr("PANTALLA #")}{idx + 1}</span>
                     {d.isPrimary ? (
-                      <span className="dd-badge primary">CABINA / PRINCIPAL</span>
+                      <span className="dd-badge primary">{tr("CABINA / PRINCIPAL")}</span>
                     ) : d.isCustomFormat ? (
-                      <span className="dd-badge custom">FORMATO CUSTOM EDID</span>
+                      <span className="dd-badge custom">{tr("FORMATO CUSTOM EDID")}</span>
                     ) : (
-                      <span className="dd-badge ext">SALIDA EXTERNA</span>
+                      <span className="dd-badge ext">{tr("SALIDA EXTERNA")}</span>
                     )}
                   </div>
                   <div className="dd-res">
                     {d.physicalWidth} × {d.physicalHeight} px
-                    <span className="dd-hz">@ {d.refreshRate}Hz</span>
+                    <span className="dd-hz">@ {d.refreshRate}{tr("Hz")}</span>
                   </div>
                   <div className="dd-meta">
-                    <span>Posición Windows: ({d.x}, {d.y})</span>
-                    <span>• Escala DPI: {Math.round(d.scaleFactor * 100)}%</span>
-                    <span>• {d.colorDepth} bits</span>
+                    <span>{tr("Posición Windows: (")}{d.x}, {d.y})</span>
+                    <span>{tr("• Escala DPI:")} {Math.round(d.scaleFactor * 100)}%</span>
+                    <span>• {d.colorDepth} {tr("bits")}</span>
                   </div>
                 </div>
               ))}
@@ -163,7 +167,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
           {/* 2. Output composition mode */}
           <div>
             <div className="insp-label" style={{ marginBottom: 6 }}>
-              MODO DE SALIDA
+              {tr("MODO DE SALIDA")}
             </div>
             <div className="mosaic-mode-cards">
               {(
@@ -171,26 +175,26 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                   {
                     id: 'single',
                     icon: <Monitor size={18} />,
-                    title: '1 Salida Única',
-                    desc: '1 proyector o procesador LED (4K / 1080p / Custom EDID)',
+                    title: tr("1 Salida Única"),
+                    desc: tr("1 proyector o procesador LED (4K / 1080p / Custom EDID)"),
                   },
                   {
                     id: 'horizontal_2x1',
                     icon: <Columns size={18} />,
-                    title: 'Mosaico Horizontal (2×1)',
-                    desc: 'Une Salida 1 (Izquierda) + Salida 2 (Derecha) en sincronía',
+                    title: tr("Mosaico Horizontal (2×1)"),
+                    desc: tr("Une Salida 1 (Izquierda) + Salida 2 (Derecha) en sincronía"),
                   },
                   {
                     id: 'vertical_1x2',
                     icon: <Rows size={18} />,
-                    title: 'Mosaico Vertical (1×2)',
-                    desc: 'Une Salida 1 (Arriba) + Salida 2 (Abajo) en sincronía',
+                    title: tr("Mosaico Vertical (1×2)"),
+                    desc: tr("Une Salida 1 (Arriba) + Salida 2 (Abajo) en sincronía"),
                   },
                   {
                     id: 'mirror_2x',
                     icon: <Copy size={18} />,
-                    title: 'Doble Espejo (Clon 1+2)',
-                    desc: 'Envía el mismo Program a 2 salidas 4K simultáneamente',
+                    title: tr("Doble Espejo (Clon 1+2)"),
+                    desc: tr("Envía el mismo Program a 2 salidas 4K simultáneamente"),
                   },
                 ] as { id: MosaicMode; icon: React.ReactNode; title: string; desc: string }[]
               ).map((m) => (
@@ -219,15 +223,15 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
           {/* 3. Output mapping (video + audio) & visual canvas preview */}
           <div className="modal-2col">
             <div className="insp-group">
-              <label className="insp-label">ASIGNACIÓN DE SALIDAS FÍSICAS</label>
+              <label className="insp-label">{tr("ASIGNACIÓN DE SALIDAS FÍSICAS")}</label>
 
               <div>
                 <small style={{ color: '#10b981', fontWeight: 700 }}>
                   {mosaicConfig.mode === 'horizontal_2x1'
-                    ? 'SALIDA 1 (MITAD IZQUIERDA DEL MOSAICO)'
+                    ? tr("SALIDA 1 (MITAD IZQUIERDA DEL MOSAICO)")
                     : mosaicConfig.mode === 'vertical_1x2'
-                    ? 'SALIDA 1 (MITAD SUPERIOR DEL MOSAICO)'
-                    : 'SALIDA 1 PRINCIPAL'}
+                    ? tr("SALIDA 1 (MITAD SUPERIOR DEL MOSAICO)")
+                    : tr("SALIDA 1 PRINCIPAL")}
                 </small>
                 <select
                   className="insp-select"
@@ -254,20 +258,20 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                     <button
                       className="top-btn"
                       onClick={handleSwapOutputs}
-                      title="Intercambiar Salida 1 con Salida 2 sin tocar cables ni ajustes de Windows"
+                      title={tr("Intercambiar Salida 1 con Salida 2 sin tocar cables ni ajustes de Windows")}
                     >
                       <ArrowLeftRight size={13} />
-                      <span>Invertir Orden (Salida 1 ↔ Salida 2)</span>
+                      <span>{tr("Invertir Orden (Salida 1 ↔ Salida 2)")}</span>
                     </button>
                   </div>
 
                   <div>
                     <small style={{ color: '#38bdf8', fontWeight: 700 }}>
                       {mosaicConfig.mode === 'horizontal_2x1'
-                        ? 'SALIDA 2 (MITAD DERECHA DEL MOSAICO)'
+                        ? tr("SALIDA 2 (MITAD DERECHA DEL MOSAICO)")
                         : mosaicConfig.mode === 'vertical_1x2'
-                        ? 'SALIDA 2 (MITAD INFERIOR DEL MOSAICO)'
-                        : 'SALIDA 2 ESPEJO'}
+                        ? tr("SALIDA 2 (MITAD INFERIOR DEL MOSAICO)")
+                        : tr("SALIDA 2 ESPEJO")}
                     </small>
                     <select
                       className="insp-select"
@@ -295,7 +299,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div className="insp-row-2col">
                     <div>
-                      <small>Overlap / Solapamiento (px)</small>
+                      <small>{tr("Overlap / Solapamiento (px)")}</small>
                       <input
                         type="number"
                         className="insp-input"
@@ -331,7 +335,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                             })
                           }
                         />
-                        <span>Superficie Única VRAM (Spanned)</span>
+                        <span>{tr("Superficie Única VRAM (Spanned)")}</span>
                       </label>
                       <label
                         style={{
@@ -353,7 +357,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                             })
                           }
                         />
-                        <span>Mostrar guía de unión en PGM</span>
+                        <span>{tr("Mostrar guía de unión en PGM")}</span>
                       </label>
                     </div>
                   </div>
@@ -361,15 +365,15 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
               )}
               {/* Audio output device */}
               <div style={{ marginTop: 10 }}>
-                <small style={{ color: '#f59e0b', fontWeight: 700 }}>SALIDA DE AUDIO</small>
+                <small style={{ color: '#f59e0b', fontWeight: 700 }}>{tr("SALIDA DE AUDIO")}</small>
                 <select
                   className="insp-select"
                   style={{ marginTop: 4 }}
                   value={audioOutputId}
                   onChange={(e) => onChangeAudioOutput(e.target.value)}
-                  title="Dispositivo por el que sale el audio de la app"
+                  title={tr("Dispositivo por el que sale el audio de la app")}
                 >
-                  <option value="">Predeterminado del sistema</option>
+                  <option value="">{tr("Predeterminado del sistema")}</option>
                   {audioDevices.map((dev) => (
                     <option key={dev.id} value={dev.id}>
                       {dev.label}
@@ -383,9 +387,9 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
             {/* Visual Preview of the virtual canvas (same aspect ratio as the real output) */}
             <div className="insp-group" style={{ justifyContent: 'space-between' }}>
               <div className="insp-label-flex">
-                <span className="insp-label">LIENZO VIRTUAL RESULTANTE</span>
+                <span className="insp-label">{tr("LIENZO VIRTUAL RESULTANTE")}</span>
                 <span className="db-readout">
-                  {totalW} × {totalH} px ({aspectStr})
+                  {totalW} × {totalH} {tr("px (")}{aspectStr})
                 </span>
               </div>
 
@@ -393,13 +397,13 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 {mosaicConfig.mode === 'horizontal_2x1' && (
                   <div className="mosaic-vis-horiz" style={previewBoxStyle}>
                     <div className="m-tile slot1" style={{ flex: `${d1?.physicalWidth || 1} 1 0` }}>
-                      <strong>SALIDA 1 (IZQ)</strong>
+                      <strong>{tr("SALIDA 1 (IZQ)")}</strong>
                       <span>
                         {d1?.physicalWidth}×{d1?.physicalHeight}
                       </span>
                     </div>
                     <div className="m-tile slot2" style={{ flex: `${d2?.physicalWidth || 1} 1 0` }}>
-                      <strong>SALIDA 2 (DER)</strong>
+                      <strong>{tr("SALIDA 2 (DER)")}</strong>
                       <span>
                         {d2?.physicalWidth}×{d2?.physicalHeight}
                       </span>
@@ -410,13 +414,13 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 {mosaicConfig.mode === 'vertical_1x2' && (
                   <div className="mosaic-vis-vert" style={previewBoxStyle}>
                     <div className="m-tile slot1" style={{ flex: `${d1?.physicalHeight || 1} 1 0` }}>
-                      <strong>SALIDA 1 (SUPERIOR)</strong>
+                      <strong>{tr("SALIDA 1 (SUPERIOR)")}</strong>
                       <span>
                         {d1?.physicalWidth}×{d1?.physicalHeight}
                       </span>
                     </div>
                     <div className="m-tile slot2" style={{ flex: `${d2?.physicalHeight || 1} 1 0` }}>
-                      <strong>SALIDA 2 (INFERIOR)</strong>
+                      <strong>{tr("SALIDA 2 (INFERIOR)")}</strong>
                       <span>
                         {d2?.physicalWidth}×{d2?.physicalHeight}
                       </span>
@@ -429,11 +433,11 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                     <div className="m-tile slot1">
                       <strong>
                         {mosaicConfig.mode === 'mirror_2x'
-                          ? 'SALIDA 1 + SALIDA 2 (CLON ESPEJO)'
-                          : 'SALIDA ÚNICA'}
+                          ? tr("SALIDA 1 + SALIDA 2 (CLON ESPEJO)")
+                          : tr("SALIDA ÚNICA")}
                       </strong>
                       <span>
-                        {d1?.physicalWidth}×{d1?.physicalHeight} @ {d1?.refreshRate}Hz
+                        {d1?.physicalWidth}×{d1?.physicalHeight} @ {d1?.refreshRate}{tr("Hz")}
                       </span>
                     </div>
                   </div>
@@ -444,8 +448,8 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 <CheckCircle2 size={14} className="emerald-text" />
                 <span>
                   {outputOpen && isSpannedActive
-                    ? 'Superficie Única Directa (VRAM Spanned) activa: 0 fotogramas de desfase.'
-                    : 'Sincronización Frame-Lock activa para formatos estándar (1080p/4K) y EDID Custom.'}
+                    ? tr("Superficie Única Directa (VRAM Spanned) activa: 0 fotogramas de desfase.")
+                    : tr("Sincronización Frame-Lock activa para formatos estándar (1080p/4K) y EDID Custom.")}
                 </span>
               </div>
             </div>
@@ -459,10 +463,10 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
                 onApplyAndLaunchOutput(true);
                 onClose();
               }}
-              title="Abre una ventana de prueba con la proporción exacta de la salida en tu monitor principal"
+              title={tr("Abre una ventana de prueba con la proporción exacta de la salida en tu monitor principal")}
             >
               <ExternalLink size={14} />
-              <span>Probar Salida en Ventana Flotante</span>
+              <span>{tr("Probar Salida en Ventana Flotante")}</span>
             </button>
 
             <button
@@ -475,8 +479,8 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
               <MonitorIcon size={15} />
               <span>
                 {outputOpen
-                  ? 'Actualizar Salida en Pantallas'
-                  : 'Activar Salida en Pantallas'}
+                  ? tr("Actualizar Salida en Pantallas")
+                  : tr("Activar Salida en Pantallas")}
               </span>
             </button>
           </div>
@@ -493,9 +497,19 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
               lineHeight: 1.6,
             }}
           >
-            <div style={{ fontWeight: 700, color: '#cbd5e1' }}>PlayCue Studio</div>
-            <div>David Redondo García</div>
-            <div style={{ userSelect: 'text' }}>davidrg81@proton.me</div>
+            <div style={{ fontWeight: 700, color: '#cbd5e1' }}>{tr("PlayCue Studio")}</div>
+            <div>{tr("David Redondo García")}</div>
+            <div>{tr("¿Algún problema? Cuéntalo en la página del proyecto:")}</div>
+            <a
+              href={PROJECT_URL}
+              onClick={(e) => {
+                e.preventDefault();
+                void window.electronAPI?.openExternal?.(PROJECT_URL);
+              }}
+              style={{ color: '#38bdf8', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              {PROJECT_URL.replace('https://', '')}
+            </a>
           </div>
         </div>
       </div>

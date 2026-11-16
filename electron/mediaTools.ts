@@ -1,3 +1,4 @@
+import { trm } from './i18n';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -169,7 +170,7 @@ function classifyGpuDevice(
   driverVersion = '',
   vendorId?: number
 ): DetectedGpuDevice {
-  const name = (rawName || 'Adaptador Gráfico').trim();
+  const name = (rawName || trm('Adaptador Gráfico')).trim();
   const lower = name.toLowerCase();
   const vramMB = Math.max(0, Math.round(vramBytes / (1024 * 1024)));
   const vramGB = vramMB / 1024;
@@ -432,7 +433,7 @@ export async function detectHardwareProfile(electronGpuInfo?: any): Promise<Hard
       {
         h264: 'h264_amf',
         hevc: 'hevc_amf',
-        label: 'AMD AMF (Aceleración GPU)',
+        label: trm('AMD AMF (Aceleración GPU)'),
         vendor: 'amd',
       },
       {
@@ -470,10 +471,10 @@ export async function detectHardwareProfile(electronGpuInfo?: any): Promise<Hard
 
     const tierLabel =
       bestGpu.tier === 'discrete'
-        ? 'GPU Dedicada • Máxima Prioridad'
+        ? trm('GPU Dedicada • Máxima Prioridad')
         : bestGpu.tier === 'integrated'
-        ? 'GPU Integrada • Aceleración Hardware'
-        : 'Renderizado Software';
+        ? trm('GPU Integrada • Aceleración Hardware')
+        : trm('Renderizado Software');
 
     const playbackDecoderLabel =
       bestGpu.vendor === 'nvidia'

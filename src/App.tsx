@@ -42,6 +42,7 @@ import { CueInspector } from './components/CueInspector';
 import { RemoteCompanionModal } from './components/RemoteCompanionModal';
 import { MosaicSetupModal } from './components/MosaicSetupModal';
 
+import { tr } from './i18n';
 const EMPTY_DECK: DeckSyncPayload = {
   cueId: null,
   mediaUrl: null,
@@ -409,9 +410,9 @@ const OperatorConsole: React.FC = () => {
         const probes = await window.electronAPI!.getFirstRunDemoClips();
         if (probes && probes.length > 0) {
           const demoTitles = [
-            'Demo 01 - Cuenta Atrás Broadcast 1080p50',
-            'Demo 02 - Barras SMPTE HD + Tono 1080p50',
-            'Demo 03 - Fondo Loop Escenario 1080p50',
+            tr("Demo 01 - Cuenta Atrás Broadcast 1080p50"),
+            tr("Demo 02 - Barras SMPTE HD + Tono 1080p50"),
+            tr("Demo 03 - Fondo Loop Escenario 1080p50"),
           ];
           const demoEndActions: EndAction[] = ['hold', 'black', 'loop'];
           const created: VideoCue[] = probes.map((probe: any, i: number) => ({
@@ -589,9 +590,10 @@ const OperatorConsole: React.FC = () => {
         const id = getId();
         if (!id) return;
         const code = el.error?.code ?? 0;
-        const msg = `No se pudo reproducir este vídeo (código ${code}${
-          el.error?.message ? `: ${el.error.message}` : ''
-        }). Prueba a convertirlo a H.264.`;
+        const msg = tr("No se pudo reproducir este vídeo (código {code}{detail}). Prueba a convertirlo a H.264.", {
+          code,
+          detail: el.error?.message ? `: ${el.error.message}` : '',
+        });
         setCues((prev) => prev.map((c) => (c.id === id ? { ...c, playbackError: msg } : c)));
         const failing = cuesRef.current.find((c) => c.id === id);
         logEvent('ERROR', 'video', `${failing?.name ?? id} (${failing?.filePath ?? '?'}): ${msg}`);
@@ -675,7 +677,7 @@ const OperatorConsole: React.FC = () => {
     (targetCueId: string, overrideCut = false) => {
       const targetCue = cuesRef.current.find((c) => c.id === targetCueId);
       if (!targetCue) return;
-      logEvent('INFO', 'take', `TAKE: ${targetCue.name}${overrideCut ? ' (cut)' : ''}`);
+      logEvent('INFO', 'take', `TAKE: ${targetCue.name}${overrideCut ? tr(" (cut)") : ''}`);
 
       ensureAudioGraph();
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -1887,7 +1889,7 @@ const OperatorConsole: React.FC = () => {
       await window.electronAPI.saveShowFile(JSON.stringify(schema, null, 2), showName);
     } catch (err: any) {
       logEvent('ERROR', 'project', `No se pudo guardar el proyecto: ${err?.message || err}`);
-      window.alert(`No se pudo guardar el proyecto: ${err?.message || err}`);
+      window.alert(tr("No se pudo guardar el proyecto: {err}", { err: err?.message || err }));
     }
   };
 
@@ -1898,7 +1900,7 @@ const OperatorConsole: React.FC = () => {
     try {
       const parsed: ShowFileSchema = JSON.parse(res.content);
       if (!parsed || !Array.isArray(parsed.cues)) {
-        throw new Error('el archivo no contiene una lista de cues válida');
+        throw new Error(tr("el archivo no contiene una lista de cues válida"));
       }
       resetPlayback();
       setShowName(parsed.showName || 'PlayCue Show');
@@ -1914,7 +1916,7 @@ const OperatorConsole: React.FC = () => {
       setSelectedCueId(parsed.cues.length > 0 ? parsed.cues[0].id : null);
     } catch (err: any) {
       logEvent('ERROR', 'project', `No se pudo abrir el proyecto: ${err?.message || err}`);
-      window.alert(`No se pudo abrir el proyecto: ${err?.message || err}`);
+      window.alert(tr("No se pudo abrir el proyecto: {err}", { err: err?.message || err }));
     }
   };
 
@@ -1928,7 +1930,7 @@ const OperatorConsole: React.FC = () => {
     setPreviewCueId(null);
     setProgramCueId(null);
     setSelectedCueId(null);
-    setShowName('Nuevo Show');
+    setShowName(tr("Nuevo Show"));
   };
 
   const handleToggleOutputWindow = async (windowed = false, forceOpen = false) => {
@@ -2095,8 +2097,8 @@ const OperatorConsole: React.FC = () => {
       {isDraggingOver && (
         <div className="dropzone-overlay">
           <div className="dropzone-box">
-            <h2>SOLTAR VÍDEOS O CARPETAS PARA AÑADIR AL CUE LIST</h2>
-            <p>Soporte directo para MP4, MOV (ProRes/H.264), MKV, WebM, AVI, MXF</p>
+            <h2>{tr("SOLTAR VÍDEOS O CARPETAS PARA AÑADIR AL CUE LIST")}</h2>
+            <p>{tr("Soporte directo para MP4, MOV (ProRes/H.264), MKV, WebM, AVI, MXF")}</p>
           </div>
         </div>
       )}
@@ -2105,17 +2107,17 @@ const OperatorConsole: React.FC = () => {
       <header className="top-broadcast-bar">
         <div className="brand-and-show">
           <div className="show-file-btns">
-            <button className="top-btn" onClick={handleNewShow} title="Nuevo Show">
+            <button className="top-btn" onClick={handleNewShow} title={tr("Nuevo Show")}>
               <FilePlus size={14} />
-              <span>Nuevo</span>
+              <span>{tr("Nuevo")}</span>
             </button>
-            <button className="top-btn" onClick={handleOpenShow} title="Abrir Show (.cueshow)">
+            <button className="top-btn" onClick={handleOpenShow} title={tr("Abrir Show (.cueshow)")}>
               <FolderOpen size={14} />
-              <span>Abrir</span>
+              <span>{tr("Abrir")}</span>
             </button>
-            <button className="top-btn" onClick={handleSaveShow} title="Guardar Show (.cueshow)">
+            <button className="top-btn" onClick={handleSaveShow} title={tr("Guardar Show (.cueshow)")}>
               <Save size={14} />
-              <span>Guardar</span>
+              <span>{tr("Guardar")}</span>
             </button>
           </div>
         </div>
@@ -2123,7 +2125,7 @@ const OperatorConsole: React.FC = () => {
         {/* Center Master Clocks (Elapsed & Remaining) */}
         <div className="master-clocks-strip">
           <div className="clock-box">
-            <span className="clock-label">TRANSCURRIDO (PGM)</span>
+            <span className="clock-label">{tr("TRANSCURRIDO (PGM)")}</span>
             <span className="clock-digits elapsed">
               {formatTimecode(pgmTime, programCue?.fps || 25, true)}
             </span>
@@ -2138,7 +2140,7 @@ const OperatorConsole: React.FC = () => {
                 : ''
             }`}
           >
-            <span className="clock-label">TIEMPO RESTANTE (REMAINING)</span>
+            <span className="clock-label">{tr("TIEMPO RESTANTE (REMAINING)")}</span>
             <span className="clock-digits remaining">
               -{formatTimecode(pgmRemaining, programCue?.fps || 25, true)}
             </span>
@@ -2151,13 +2153,13 @@ const OperatorConsole: React.FC = () => {
             <div
               className="top-btn"
               style={{ cursor: 'default', opacity: 0.92 }}
-              title={`Prioridad Hardware Activa: ${hardwareInfo.selectedGpuName} (${
+              title={`${tr("Prioridad Hardware Activa")}: ${hardwareInfo.selectedGpuName} (${
                 hardwareInfo.selectedGpuTier === 'discrete'
-                  ? 'GPU Dedicada — Máxima Potencia'
+                  ? tr("GPU Dedicada — Máxima Potencia")
                   : hardwareInfo.selectedGpuTier === 'integrated'
-                  ? 'GPU Integrada'
-                  : 'Software'
-              })\nReproducción: ${hardwareInfo.playbackDecoderLabel}\nConversión: ${
+                  ? tr("GPU Integrada")
+                  : tr("Software")
+              })\n${tr("Reproducción")}: ${hardwareInfo.playbackDecoderLabel}\n${tr("Conversión")}: ${
                 hardwareInfo.preferredEncoderLabel
               }`}
             >
@@ -2182,31 +2184,31 @@ const OperatorConsole: React.FC = () => {
           <button
             className="top-btn"
             onClick={() => setIsMosaicModalOpen(true)}
-            title="Configuración: pantallas de salida, modo de salida y salida de audio"
+            title={tr("Configuración: pantallas de salida, modo de salida y salida de audio")}
           >
             <Settings size={14} />
-            <span>Configuración</span>
+            <span>{tr("Configuración")}</span>
           </button>
 
           <button
             className={`output-live-btn ${outputOpen ? 'live' : ''}`}
             onClick={() => handleToggleOutputWindow(false)}
-            title="Activar / Desactivar Salida Fullscreen automática en la pantalla seleccionada"
+            title={tr("Activar / Desactivar Salida Fullscreen automática en la pantalla seleccionada")}
           >
             <span className="live-indicator" />
             <span>
               {outputOpen
                 ? mosaicConfig.mode === 'single'
-                  ? 'SALIDA: ON'
-                  : 'MOSAICO: ON'
-                : 'ACTIVAR SALIDA'}
+                  ? tr("SALIDA: ON")
+                  : tr("MOSAICO: ON")
+                : tr("ACTIVAR SALIDA")}
             </span>
           </button>
 
           <button
             className={`top-btn ${showOSD ? 'active-cyan' : ''}`}
             onClick={() => setShowOSD(!showOSD)}
-            title="Mostrar / Ocultar Timecode y Resolución OSD en las pantallas de salida"
+            title={tr("Mostrar / Ocultar Timecode y Resolución OSD en las pantallas de salida")}
           >
             <Eye size={14} />
             <span>OSD</span>
@@ -2215,10 +2217,10 @@ const OperatorConsole: React.FC = () => {
           <button
             className="top-btn companion-btn"
             onClick={() => setIsRemoteModalOpen(true)}
-            title="Configurar Bitfocus Companion (OSC / HTTP) y Atajos"
+            title={tr("Configurar Bitfocus Companion (OSC / HTTP) y Atajos")}
           >
             <Radio size={14} />
-            <span>Companion</span>
+            <span>{tr("Companion")}</span>
           </button>
         </div>
       </header>
@@ -2365,7 +2367,7 @@ const OperatorConsole: React.FC = () => {
         <div
           className="resizer-horizontal"
           onMouseDown={startResizeHorizontal}
-          title="Arrastra arriba o abajo para ajustar el tamaño de los monitores y del Cue List"
+          title={tr("Arrastra arriba o abajo para ajustar el tamaño de los monitores y del Cue List")}
         >
           <div className="resizer-grip-pill" />
         </div>
@@ -2402,7 +2404,7 @@ const OperatorConsole: React.FC = () => {
                   ...orig,
                   id: `cue_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                   cueNumber: `${orig.cueNumber}B`,
-                  name: `${orig.name} (Copia)`,
+                  name: `${orig.name} ${tr("(Copia)")}`,
                 };
                 const next = [...cues];
                 next.splice(idx + 1, 0, copy);
@@ -2427,7 +2429,7 @@ const OperatorConsole: React.FC = () => {
           <div
             className="resizer-vertical"
             onMouseDown={startResizeVertical}
-            title="Arrastra a izquierda o derecha para ampliar o reducir el panel de ajustes"
+            title={tr("Arrastra a izquierda o derecha para ampliar o reducir el panel de ajustes")}
           >
             <div className="resizer-grip-pill-v" />
           </div>

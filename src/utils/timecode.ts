@@ -1,5 +1,6 @@
 import { VideoCue, CueColor } from '../types/cue';
 
+import { tr } from '../i18n';
 function sanitizeFps(fps: number | undefined | null): number {
   return Number.isFinite(fps) && (fps as number) >= 1 && (fps as number) <= 240 ? (fps as number) : 25;
 }
@@ -111,7 +112,7 @@ export function getEffectiveCueDuration(cue: VideoCue | null | undefined): numbe
 }
 
 export function gainToDbString(volumePct: number, muted: boolean): string {
-  if (muted || volumePct <= 0.1) return '-∞ dB';
+  if (muted || volumePct <= 0.1) return tr("-∞ dB");
   const ratio = volumePct / 100;
   const db = 20 * Math.log10(ratio);
   const sign = db > 0 ? '+' : '';
@@ -119,44 +120,44 @@ export function gainToDbString(volumePct: number, muted: boolean): string {
 }
 
 export const CUE_COLOR_MAP: Record<CueColor, { bg: string; border: string; dot: string; label: string }> = {
-  none: { bg: 'transparent', border: '#1e293b', dot: '#64748b', label: 'Sin color' },
-  red: { bg: 'rgba(239, 68, 68, 0.12)', border: '#ef4444', dot: '#ef4444', label: 'Rojo' },
-  amber: { bg: 'rgba(245, 158, 11, 0.12)', border: '#f59e0b', dot: '#f59e0b', label: 'Ámbar' },
-  emerald: { bg: 'rgba(16, 185, 129, 0.12)', border: '#10b981', dot: '#10b981', label: 'Verde' },
-  blue: { bg: 'rgba(59, 130, 246, 0.12)', border: '#3b82f6', dot: '#3b82f6', label: 'Azul' },
-  purple: { bg: 'rgba(168, 85, 247, 0.12)', border: '#a855f7', dot: '#a855f7', label: 'Violeta' },
-  cyan: { bg: 'rgba(6, 182, 212, 0.12)', border: '#06b6d4', dot: '#06b6d4', label: 'Cian' },
+  none: { bg: 'transparent', border: '#1e293b', dot: '#64748b', label: tr("Sin color") },
+  red: { bg: 'rgba(239, 68, 68, 0.12)', border: '#ef4444', dot: '#ef4444', label: tr("Rojo") },
+  amber: { bg: 'rgba(245, 158, 11, 0.12)', border: '#f59e0b', dot: '#f59e0b', label: tr("Ámbar") },
+  emerald: { bg: 'rgba(16, 185, 129, 0.12)', border: '#10b981', dot: '#10b981', label: tr("Verde") },
+  blue: { bg: 'rgba(59, 130, 246, 0.12)', border: '#3b82f6', dot: '#3b82f6', label: tr("Azul") },
+  purple: { bg: 'rgba(168, 85, 247, 0.12)', border: '#a855f7', dot: '#a855f7', label: tr("Violeta") },
+  cyan: { bg: 'rgba(6, 182, 212, 0.12)', border: '#06b6d4', dot: '#06b6d4', label: tr("Cian") },
 };
 
 export const END_ACTION_LABELS: Record<VideoCue['endAction'], { short: string; full: string; color: string }> = {
   hold: {
-    short: 'HOLD (Pausa Fin)',
-    full: 'Congelar en último fotograma (Hold at End)',
+    short: tr("HOLD (Pausa Fin)"),
+    full: tr("Congelar en último fotograma (Hold at End)"),
     color: '#38bdf8',
   },
   black: {
-    short: 'BLACK (Ir a Negro)',
-    full: 'Fundir/Cortar a negro al terminar (Black at End)',
+    short: tr("BLACK (Ir a Negro)"),
+    full: tr("Fundir/Cortar a negro al terminar (Black at End)"),
     color: '#94a3b8',
   },
   loop: {
-    short: 'LOOP (Bucle)',
-    full: 'Bucle continuo entre In y Out (Loop)',
+    short: tr("LOOP (Bucle)"),
+    full: tr("Bucle continuo entre In y Out (Loop)"),
     color: '#10b981',
   },
   next: {
-    short: 'PLAY NEXT (Siguiente)',
-    full: 'Lanzar siguiente Cue automáticamente (Auto-Follow)',
+    short: tr("PLAY NEXT (Siguiente)"),
+    full: tr("Lanzar siguiente Cue automáticamente (Auto-Follow)"),
     color: '#f59e0b',
   },
   goto: {
-    short: 'IR A (Saltar a Cue)',
-    full: 'Saltar a otro Cue al terminar (permite cerrar bucles entre vídeos)',
+    short: tr("IR A (Saltar a Cue)"),
+    full: tr("Saltar a otro Cue al terminar (permite cerrar bucles entre vídeos)"),
     color: '#a855f7',
   },
   stop: {
-    short: 'STOP (Limpiar)',
-    full: 'Detener y descargar salida',
+    short: tr("STOP (Limpiar)"),
+    full: tr("Detener y descargar salida"),
     color: '#ef4444',
   },
 };

@@ -37,6 +37,7 @@ import {
 } from '../utils/videoGeometry';
 import { TestPatternCanvas } from './TestPatternCanvas';
 
+import { tr } from '../i18n';
 interface DualMonitorsProps {
   previewCue: VideoCue | null;
   programCue: VideoCue | null;
@@ -450,7 +451,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             zoom: 100,
           });
         }}
-        title="Arrastra para mover el vídeo • Arrastra las 4 esquinas para ampliar o deformar H/V • Doble clic para centrar al 100%"
+        title={tr("Arrastra para mover el vídeo • Arrastra las 4 esquinas para ampliar o deformar H/V • Doble clic para centrar al 100%")}
       >
         {/* 4 Corner Handles */}
         <div
@@ -478,7 +479,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           }
         />
         <div className="gizmo-hud-badge">
-          {box.pixelWidth}×{box.pixelHeight}px ({Math.round(cue.scaleX ?? 100)}%×
+          {box.pixelWidth}×{box.pixelHeight}{tr("px (")}{Math.round(cue.scaleX ?? 100)}%×
           {Math.round(cue.scaleY ?? 100)}%)
         </div>
       </div>
@@ -513,7 +514,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
         <div className="monitor-header">
           <div className="monitor-badge prv-badge">
             <span className="tally-dot prv-dot" />
-            PREVIEW (PRV)
+            {tr("PREVIEW (PRV)")}
           </div>
           <div className="monitor-clip-title">
             {previewCue ? (
@@ -524,11 +525,11 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                   {previewCue.videoCodec.toUpperCase()} {previewCue.width}×{previewCue.height} •{' '}
                   {previewCue.audioChannels > 0
                     ? `AUDIO ${previewCue.audioCodec.toUpperCase()} ${previewCue.audioChannels}ch`
-                    : 'SIN AUDIO'}
+                    : tr("SIN AUDIO")}
                 </span>
               </>
             ) : (
-              <span className="text-muted">Selecciona un vídeo del Cue List</span>
+              <span className="text-muted">{tr("Selecciona un vídeo del Cue List")}</span>
             )}
           </div>
           <div className="monitor-tc-group">
@@ -600,13 +601,13 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
             {!previewCue && (
               <div className="empty-viewport">
-                <span>SIN SEÑAL EN PREVIEW</span>
-                <small>Lienzo {totalCanvasWidth}×{totalCanvasHeight} px</small>
+                <span>{tr("SIN SEÑAL EN PREVIEW")}</span>
+                <small>{tr("Lienzo")} {totalCanvasWidth}×{totalCanvasHeight} px</small>
               </div>
             )}
             {previewCue && !previewCue.exists && (
               <div className="missing-overlay">
-                <span>ARCHIVO NO ENCONTRADO (OFFLINE)</span>
+                <span>{tr("ARCHIVO NO ENCONTRADO (OFFLINE)")}</span>
                 <small>{previewCue.filePath}</small>
               </div>
             )}
@@ -664,7 +665,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className={`ctrl-btn ${prvPlaying ? 'active-emerald' : ''}`}
               onClick={onTogglePrvPlay}
               disabled={!previewCue}
-              title="Reproducir / Pausar Preview"
+              title={tr("Reproducir / Pausar Preview")}
             >
               {prvPlaying ? <Pause size={14} /> : <Play size={14} />}
               <span>{prvPlaying ? 'PAUSA' : 'PLAY'}</span>
@@ -673,7 +674,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className="ctrl-btn icon-only"
               onClick={() => onStepPrvFrame(-1)}
               disabled={!previewCue}
-              title="Fotograma anterior (-1f)"
+              title={tr("Fotograma anterior (-1f)")}
             >
               <StepBack size={13} />
             </button>
@@ -681,7 +682,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className="ctrl-btn icon-only"
               onClick={() => onStepPrvFrame(1)}
               disabled={!previewCue}
-              title="Fotograma siguiente (+1f)"
+              title={tr("Fotograma siguiente (+1f)")}
             >
               <StepForward size={13} />
             </button>
@@ -692,24 +693,24 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className="ctrl-btn trim-btn"
               onClick={onSetPrvIn}
               disabled={!previewCue}
-              title="Marcar Punto IN en posición actual (Tecla I)"
+              title={tr("Marcar Punto IN en posición actual (Tecla I)")}
             >
               <Scissors size={12} />
-              <span>[ IN</span>
+              <span>{tr("[ IN")}</span>
             </button>
             <button
               className="ctrl-btn trim-btn"
               onClick={onSetPrvOut}
               disabled={!previewCue}
-              title="Marcar Punto OUT en posición actual (Tecla O)"
+              title={tr("Marcar Punto OUT en posición actual (Tecla O)")}
             >
-              <span>OUT ]</span>
+              <span>{tr("OUT ]")}</span>
             </button>
             <button
               className="ctrl-btn"
               onClick={onResetPrvInOut}
               disabled={!previewCue}
-              title="Resetear recorte In/Out al clip completo"
+              title={tr("Resetear recorte In/Out al clip completo")}
             >
               <span>CLR</span>
             </button>
@@ -720,7 +721,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className="ctrl-btn"
               onClick={() => onPrvGotoEnd(10)}
               disabled={!previewCue}
-              title="Probar final en Preview (-10s antes de OUT)"
+              title={tr("Probar final en Preview (-10s antes de OUT)")}
             >
               <span>-10s</span>
             </button>
@@ -728,7 +729,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
               className={`ctrl-btn ${prvAudition ? 'active-amber' : ''}`}
               onClick={onTogglePrvAudition}
               disabled={!previewCue}
-              title="Escuchar audio de Preview (Audition)"
+              title={tr("Escuchar audio de Preview (Audition)")}
             >
               {prvAudition ? <Volume2 size={13} /> : <VolumeX size={13} />}
               <span>AUD</span>
@@ -743,7 +744,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           className="take-master-btn"
           onClick={onTake}
           disabled={!previewCue && !programCue}
-          title="Lanzar Preview a Program con transición (ENTER / F1)"
+          title={tr("Lanzar Preview a Program con transición (ENTER / F1)")}
         >
           <ArrowRightLeft size={18} />
           <span className="take-title">TAKE</span>
@@ -756,14 +757,14 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           className="cut-direct-btn"
           onClick={onCutImmediate}
           disabled={!previewCue}
-          title="Corte directo instantáneo a Program (F2)"
+          title={tr("Corte directo instantáneo a Program (F2)")}
         >
           <Zap size={14} />
-          <span>CUT DIRECTO</span>
+          <span>{tr("CUT DIRECTO")}</span>
         </button>
 
         {/* Transition Progress Bar */}
-        <div className="trans-progress-wrap" title="Progreso de transición A/B">
+        <div className="trans-progress-wrap" title={tr("Progreso de transición A/B")}>
           <div
             className="trans-progress-fill"
             style={{ width: `${Math.round(transitionProgress * 100)}%` }}
@@ -772,7 +773,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
         {/* Transition Type Selector */}
         <div className="bridge-section">
-          <div className="bridge-label">TRANSICIÓN</div>
+          <div className="bridge-label">{tr("TRANSICIÓN")}</div>
           <div className="trans-type-grid">
             {(
               [
@@ -810,7 +811,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           <button
             className={`override-btn blackout-btn ${isBlackout ? 'active' : ''}`}
             onClick={onToggleBlackout}
-            title="Blackout / Fade to Black en salida (Tecla B)"
+            title={tr("Blackout / Fade to Black en salida (Tecla B)")}
           >
             <EyeOff size={14} />
             <span>BLACKOUT</span>
@@ -819,7 +820,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           <button
             className={`override-btn freeze-btn ${isFrozen ? 'active' : ''}`}
             onClick={onToggleFreeze}
-            title="Congelar imagen de salida (Tecla F)"
+            title={tr("Congelar imagen de salida (Tecla F)")}
           >
             <Snowflake size={14} />
             <span>FREEZE</span>
@@ -828,10 +829,10 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           <button
             className={`override-btn pattern-btn ${isTestPattern ? 'active' : ''}`}
             onClick={onToggleTestPattern}
-            title="Enviar Carta de Ajuste SMPTE a Salida"
+            title={tr("Enviar Carta de Ajuste SMPTE a Salida")}
           >
             <Tv size={14} />
-            <span>CARTA AJUSTE</span>
+            <span>{tr("CARTA AJUSTE")}</span>
           </button>
         </div>
       </div>
@@ -846,7 +847,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           <div className="monitor-header">
             <div className="monitor-badge pgm-badge">
               <span className={`tally-dot pgm-dot ${pgmPlaying ? 'blinking' : ''}`} />
-              PROGRAM (PGM) {pgmPlaying ? '• ON AIR' : '• STANDBY'}
+              {tr("PROGRAM (PGM)")} {pgmPlaying ? '• ON AIR' : tr("• STANDBY")}
             </div>
             <div className="monitor-clip-title">
               {programCue ? (
@@ -856,18 +857,18 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                   <span className="codec-tag">
                     {programCue.audioChannels > 0
                       ? `${programCue.audioCodec.toUpperCase()} ${programCue.audioChannels}ch`
-                      : 'SIN AUDIO'}
+                      : tr("SIN AUDIO")}
                   </span>
                   <span
                     className="end-action-chip"
                     style={{ borderColor: END_ACTION_LABELS[programCue.endAction].color }}
                   >
-                    FIN: {END_ACTION_LABELS[programCue.endAction].short}
+                    {tr("FIN:")} {END_ACTION_LABELS[programCue.endAction].short}
                   </span>
                 </>
               ) : (
                 <span className="text-muted">
-                  Salida {totalCanvasWidth}×{totalCanvasHeight} px
+                  {tr("Salida")} {totalCanvasWidth}×{totalCanvasHeight} px
                 </span>
               )}
             </div>
@@ -1002,21 +1003,21 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
 
               {isBlackout && (
                 <div className="blackout-viewport-banner">
-                  <span>BLACKOUT ACTIVO (SALIDA EN NEGRO)</span>
+                  <span>{tr("BLACKOUT ACTIVO (SALIDA EN NEGRO)")}</span>
                 </div>
               )}
 
               {isFrozen && !isBlackout && (
                 <div className="freeze-viewport-banner">
                   <Snowflake size={13} />
-                  <span>SALIDA CONGELADA (FREEZE)</span>
+                  <span>{tr("SALIDA CONGELADA (FREEZE)")}</span>
                 </div>
               )}
 
               {!programCue && !isTestPattern && (
                 <div className="empty-viewport">
-                  <span>PROGRAM EN NEGRO</span>
-                  <small>Lienzo {totalCanvasWidth}×{totalCanvasHeight} px</small>
+                  <span>{tr("PROGRAM EN NEGRO")}</span>
+                  <small>{tr("Lienzo")} {totalCanvasWidth}×{totalCanvasHeight} px</small>
                 </div>
               )}
             </div>
@@ -1074,19 +1075,19 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className={`ctrl-btn pgm-play-btn ${pgmPlaying ? 'active-red' : ''}`}
                 onClick={onTogglePgmPlay}
                 disabled={!programCue}
-                title="Play / Pausa Program (ESPACIO)"
+                title={tr("Play / Pausa Program (ESPACIO)")}
               >
                 {pgmPlaying ? <Pause size={14} /> : <Play size={14} />}
-                <span>{pgmPlaying ? 'PAUSAR PGM' : 'PLAY PGM'}</span>
+                <span>{pgmPlaying ? tr("PAUSAR PGM") : 'PLAY PGM'}</span>
               </button>
               <button
                 className="ctrl-btn"
                 onClick={onRestartPgm}
                 disabled={!programCue}
-                title="Volver al punto IN del clip en aire (Tecla R)"
+                title={tr("Volver al punto IN del clip en aire (Tecla R)")}
               >
                 <RotateCcw size={13} />
-                <span>INICIO</span>
+                <span>{tr("INICIO")}</span>
               </button>
             </div>
 
@@ -1096,7 +1097,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className="ctrl-btn goto-end-btn"
                 onClick={() => onPgmGotoEnd(30)}
                 disabled={!programCue}
-                title="Saltar a 30 segundos antes del punto OUT"
+                title={tr("Saltar a 30 segundos antes del punto OUT")}
               >
                 <FastForward size={12} />
                 <span>-30s</span>
@@ -1105,7 +1106,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className="ctrl-btn goto-end-btn"
                 onClick={() => onPgmGotoEnd(20)}
                 disabled={!programCue}
-                title="Saltar a 20 segundos antes del punto OUT"
+                title={tr("Saltar a 20 segundos antes del punto OUT")}
               >
                 <span>-20s</span>
               </button>
@@ -1113,7 +1114,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className="ctrl-btn goto-end-btn highlight-goto"
                 onClick={() => onPgmGotoEnd(10)}
                 disabled={!programCue}
-                title="Saltar a 10 segundos antes del punto OUT (Tecla T)"
+                title={tr("Saltar a 10 segundos antes del punto OUT (Tecla T)")}
               >
                 <span>-10s</span>
               </button>
@@ -1125,7 +1126,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className={`ctrl-btn ${programCue?.endAction === 'hold' ? 'active-cyan' : ''}`}
                 onClick={() => onChangePgmEndAction('hold')}
                 disabled={!programCue}
-                title="Al terminar: Congelar último fotograma (Hold)"
+                title={tr("Al terminar: Congelar último fotograma (Hold)")}
               >
                 <span>HOLD</span>
               </button>
@@ -1133,7 +1134,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className={`ctrl-btn ${programCue?.endAction === 'black' ? 'active-slate' : ''}`}
                 onClick={() => onChangePgmEndAction('black')}
                 disabled={!programCue}
-                title="Al terminar: Ir a Negro (Black)"
+                title={tr("Al terminar: Ir a Negro (Black)")}
               >
                 <span>BLACK</span>
               </button>
@@ -1141,7 +1142,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className={`ctrl-btn ${programCue?.endAction === 'loop' ? 'active-emerald' : ''}`}
                 onClick={() => onChangePgmEndAction('loop')}
                 disabled={!programCue}
-                title="Al terminar: Bucle infinito (Tecla L)"
+                title={tr("Al terminar: Bucle infinito (Tecla L)")}
               >
                 <Repeat size={12} />
                 <span>LOOP</span>
@@ -1150,7 +1151,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 className={`ctrl-btn ${programCue?.endAction === 'next' ? 'active-amber' : ''}`}
                 onClick={() => onChangePgmEndAction('next')}
                 disabled={!programCue}
-                title="Al terminar: Lanzar siguiente vídeo automáticamente"
+                title={tr("Al terminar: Lanzar siguiente vídeo automáticamente")}
               >
                 <SkipForward size={12} />
                 <span>NEXT</span>
@@ -1205,7 +1206,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
             {/* Master Fader with 0 dB (100%) Snap */}
             <div className="master-fader-col">
               <div className="fader-track-wrap">
-                <div className="fader-zero-tick" title="0.0 dB (100%)" />
+                <div className="fader-zero-tick" title={tr("0.0 dB (100%)")} />
                 <input
                   type="range"
                   className="vertical-fader"
@@ -1215,13 +1216,13 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                   value={isMasterMuted ? 0 : masterVolume}
                   onChange={(e) => handleMasterFaderChange(parseInt(e.target.value, 10))}
                   onDoubleClick={() => onChangeMasterVolume(100)}
-                  title={`Master: ${gainToDbString(masterVolume, isMasterMuted)} (Doble clic para 0.0 dB)`}
+                  title={tr("Master: {db} (Doble clic para 0.0 dB)", { db: gainToDbString(masterVolume, isMasterMuted) })}
                 />
               </div>
               <span
                 className={`fader-val ${masterVolume === 100 && !isMasterMuted ? 'is-zero' : ''}`}
                 onClick={() => onChangeMasterVolume(100)}
-                title="Clic para fijar a 0.0 dB"
+                title={tr("Clic para fijar a 0.0 dB")}
               >
                 {isMasterMuted ? 'MUTE' : gainToDbString(masterVolume, false)}
               </span>
@@ -1231,7 +1232,7 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
           <button
             className={`master-mute-btn ${isMasterMuted ? 'muted' : ''}`}
             onClick={onToggleMasterMute}
-            title="Silenciar Salida Master (Tecla M)"
+            title={tr("Silenciar Salida Master (Tecla M)")}
           >
             {isMasterMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
             <span>{isMasterMuted ? 'MUTED' : 'MUTE'}</span>

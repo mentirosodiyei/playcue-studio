@@ -93,7 +93,8 @@
       "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "language": "3082",
+      "multiLanguageInstaller": true,
+      "installerLanguages": ["en_US", "es_ES"],
       "artifactName": "PlayCue_Studio_Setup_${version}.exe"
     },
     "portable": {

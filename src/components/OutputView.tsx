@@ -7,6 +7,7 @@ import {
   getBackgroundBlurVideoStyle,
 } from '../utils/videoGeometry';
 
+import { tr } from '../i18n';
 const DEFAULT_DECK: DeckSyncPayload = {
   cueId: null,
   mediaUrl: null,
@@ -457,10 +458,10 @@ export const OutputView: React.FC = () => {
           }}
         >
           <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, marginBottom: 2 }}>
-            {viewport.label} • LIENZO {viewport.canvasWidth}×{viewport.canvasHeight}
+            {viewport.label} • {tr("LIENZO")} {viewport.canvasWidth}×{viewport.canvasHeight}
           </div>
           <div style={{ fontSize: 14, color: '#38bdf8', fontWeight: 700 }}>
-            CUE {state.programCueNumber || '-'} • {state.programCueName || 'NO CLIP'}
+            CUE {state.programCueNumber || '-'} • {state.programCueName || tr("NO CLIP")}
           </div>
           <div
             style={{

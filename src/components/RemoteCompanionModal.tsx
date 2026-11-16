@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Radio, Terminal, Keyboard, Copy, Check } from 'lucide-react';
 import { RemoteCommandLog } from '../types/cue';
 
+import { tr } from '../i18n';
 interface RemoteCompanionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -30,7 +31,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
     if (!window.electronAPI) return;
     const res = await window.electronAPI.installCompanionModule();
     if (res.ok) {
-      setInstallMsg(`Módulo instalado en: ${res.targetDir} (Reinicia o recarga módulos en Companion)`);
+      setInstallMsg(tr("Módulo instalado en: {dir} (Reinicia o recarga módulos en Companion)", { dir: res.targetDir ?? "" }));
     } else {
       setInstallMsg(`Error: ${res.error}`);
     }
@@ -39,38 +40,38 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
   const primaryIp = remoteInfo.ips.find((ip) => ip !== '127.0.0.1') || '127.0.0.1';
 
   const endpoints = [
-    { label: 'TAKE (Preview → Program)', osc: '/pbp/take', http: '/api/take' },
-    { label: 'CUT Directo', osc: '/mitti/cut', http: '/api/cut' },
-    { label: 'Play / Pause Program', osc: '/mitti/togglePlay', http: '/api/toggle-play' },
-    { label: 'Play Program', osc: '/mitti/play', http: '/api/play' },
-    { label: 'Pause Program', osc: '/mitti/pause', http: '/api/pause' },
-    { label: 'Ir a -10s del final', osc: '/mitti/goto10', http: '/api/goto-end/10' },
-    { label: 'Ir a -20s del final', osc: '/mitti/goto20', http: '/api/goto-end/20' },
-    { label: 'Ir a -30s del final', osc: '/mitti/goto30', http: '/api/goto-end/30' },
-    { label: 'Blackout (Fade to Black)', osc: '/mitti/blackout', http: '/api/blackout' },
-    { label: 'Freeze (Congelar Salida)', osc: '/mitti/freeze', http: '/api/freeze' },
-    { label: 'PANIC (Stop & Blackout)', osc: '/mitti/panic', http: '/api/panic' },
-    { label: 'Cargar Cue N en Preview', osc: '/mitti/jumpToCue [int]', http: '/cue/1/load' },
-    { label: 'Lanzar Cue N a Program', osc: '/mitti/playCue [int]', http: '/cue/1/take' },
-    { label: 'Fondo Vídeo Ampliado + Blur 90%', osc: '/mitti/bgblur', http: '/api/blur-toggle' },
-    { label: 'Modo Escala (fit / fill / stretch)', osc: '/scale/mode [str]', http: '/api/scale-mode?value=fill' },
-    { label: 'Aspect Ratio (native/output/16:9/4:3)', osc: '/aspect/ratio [str]', http: '/api/aspect-ratio?value=output' },
-    { label: 'Zoom en Salida (50% a 300%)', osc: '/zoom [int]', http: '/api/zoom?value=133' },
-    { label: 'Estado JSON en tiempo real', osc: '-', http: '/api/status' },
+    { label: tr("TAKE (Preview → Program)"), osc: '/pbp/take', http: '/api/take' },
+    { label: tr("CUT Directo"), osc: '/mitti/cut', http: '/api/cut' },
+    { label: tr("Play / Pause Program"), osc: '/mitti/togglePlay', http: '/api/toggle-play' },
+    { label: tr("Play Program"), osc: '/mitti/play', http: '/api/play' },
+    { label: tr("Pause Program"), osc: '/mitti/pause', http: '/api/pause' },
+    { label: tr("Ir a -10s del final"), osc: '/mitti/goto10', http: '/api/goto-end/10' },
+    { label: tr("Ir a -20s del final"), osc: '/mitti/goto20', http: '/api/goto-end/20' },
+    { label: tr("Ir a -30s del final"), osc: '/mitti/goto30', http: '/api/goto-end/30' },
+    { label: tr("Blackout (Fade to Black)"), osc: '/mitti/blackout', http: '/api/blackout' },
+    { label: tr("Freeze (Congelar Salida)"), osc: '/mitti/freeze', http: '/api/freeze' },
+    { label: tr("PANIC (Stop & Blackout)"), osc: '/mitti/panic', http: '/api/panic' },
+    { label: tr("Cargar Cue N en Preview"), osc: '/mitti/jumpToCue [int]', http: '/cue/1/load' },
+    { label: tr("Lanzar Cue N a Program"), osc: '/mitti/playCue [int]', http: '/cue/1/take' },
+    { label: tr("Fondo Vídeo Ampliado + Blur 90%"), osc: '/mitti/bgblur', http: '/api/blur-toggle' },
+    { label: tr("Modo Escala (fit / fill / stretch)"), osc: '/scale/mode [str]', http: '/api/scale-mode?value=fill' },
+    { label: tr("Aspect Ratio (native/output/16:9/4:3)"), osc: '/aspect/ratio [str]', http: '/api/aspect-ratio?value=output' },
+    { label: tr("Zoom en Salida (50% a 300%)"), osc: '/zoom [int]', http: '/api/zoom?value=133' },
+    { label: tr("Estado JSON en tiempo real"), osc: '-', http: '/api/status' },
   ];
 
   const shortcuts = [
-    { key: 'ESPACIO', desc: 'Play / Pause en Program (PGM)' },
-    { key: 'ENTER / F1', desc: 'TAKE (Transición de Preview a Program)' },
-    { key: 'F2', desc: 'CUT Directo (0s de Preview a Program)' },
-    { key: 'T', desc: 'Saltar a -10s antes del final en Program (Test End)' },
-    { key: 'B', desc: 'Activar / Desactivar BLACKOUT en Salida' },
-    { key: 'F', desc: 'Activar / Desactivar FREEZE (Congelar imagen)' },
-    { key: 'ESC', desc: 'PANIC (Pausar y activar Blackout de emergencia)' },
-    { key: 'I / O', desc: 'Marcar punto IN / punto OUT en Preview' },
-    { key: 'L', desc: 'Alternar modo LOOP en el vídeo actual de Program' },
-    { key: 'R', desc: 'Reiniciar clip de Program al punto IN' },
-    { key: '↑ / ↓', desc: 'Seleccionar Cue anterior / siguiente en escaleta' },
+    { key: 'ESPACIO', desc: tr("Play / Pause en Program (PGM)") },
+    { key: 'ENTER / F1', desc: tr("TAKE (Transición de Preview a Program)") },
+    { key: 'F2', desc: tr("CUT Directo (0s de Preview a Program)") },
+    { key: 'T', desc: tr("Saltar a -10s antes del final en Program (Test End)") },
+    { key: 'B', desc: tr("Activar / Desactivar BLACKOUT en Salida") },
+    { key: 'F', desc: tr("Activar / Desactivar FREEZE (Congelar imagen)") },
+    { key: 'ESC', desc: tr("PANIC (Pausar y activar Blackout de emergencia)") },
+    { key: 'I / O', desc: tr("Marcar punto IN / punto OUT en Preview") },
+    { key: 'L', desc: tr("Alternar modo LOOP en el vídeo actual de Program") },
+    { key: 'R', desc: tr("Reiniciar clip de Program al punto IN") },
+    { key: '↑ / ↓', desc: tr("Seleccionar Cue anterior / siguiente en escaleta") },
   ];
 
   return (
@@ -79,7 +80,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
         <div className="modal-header">
           <div className="modal-title">
             <Radio size={18} className="emerald-text" />
-            <span>CONTROL REMOTO: BITFOCUS COMPANION (OSC / HTTP) & ATAJOS</span>
+            <span>{tr("CONTROL REMOTO: BITFOCUS COMPANION (OSC / HTTP) & ATAJOS")}</span>
           </div>
           <button className="row-icon-btn" onClick={onClose}>
             <X size={16} />
@@ -102,12 +103,10 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
           >
             <div>
               <strong style={{ color: '#34d399', fontSize: 12 }}>
-                MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.3.0)
+                {tr("MÓDULO NATIVO BITFOCUS COMPANION (PlayCue Studio v1.6.1)")}
               </strong>
               <div style={{ color: '#cbd5e1', fontSize: 11, marginTop: 2 }}>
-                Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a
-                Programa (PGM con transición de la app), Botón TAKE, Cuenta Atrás con colores,
-                Transiciones, End-Actions y Mosaico 2×1/1×2.
+                {tr("Incluye Presets listos para arrastrar: Lanzar vídeos a Previo (PRV), Directo a Programa (PGM con transición de la app), Botón TAKE, Cuenta Atrás con colores, Transiciones, End-Actions y Mosaico 2×1/1×2.")}
               </div>
               {installMsg && (
                 <div style={{ color: '#fbbf24', fontSize: 11, marginTop: 4, fontWeight: 700 }}>
@@ -120,25 +119,25 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
               style={{ whiteSpace: 'nowrap' }}
               onClick={handleInstallModule}
             >
-              Instalar en Companion Local
+              {tr("Instalar en Companion Local")}
             </button>
           </div>
 
           {/* Server Status Banner */}
           <div className="remote-status-cards">
             <div className="remote-card">
-              <span className="remote-card-label">SERVIDOR OSC UDP (Mitti / PlaybackPro+)</span>
+              <span className="remote-card-label">{tr("SERVIDOR OSC UDP (Mitti / PlaybackPro+)")}</span>
               <strong className="emerald-text">
                 {primaryIp} : {remoteInfo.oscPort}
               </strong>
-              <small>Compatible con módulo Generic OSC o Mitti en Companion</small>
+              <small>{tr("Compatible con módulo Generic OSC o Mitti en Companion")}</small>
             </div>
             <div className="remote-card">
-              <span className="remote-card-label">API HTTP REST + TELEMETRÍA JSON</span>
+              <span className="remote-card-label">{tr("API HTTP REST + TELEMETRÍA JSON")}</span>
               <strong className="cyan-text">
-                http://{primaryIp}:{remoteInfo.httpPort}
+                {tr("http://")}{primaryIp}:{remoteInfo.httpPort}
               </strong>
-              <small>Compatible con Generic HTTP en Bitfocus Companion / StreamDeck</small>
+              <small>{tr("Compatible con Generic HTTP en Bitfocus Companion / StreamDeck")}</small>
             </div>
           </div>
 
@@ -146,7 +145,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
             {/* Endpoints Table */}
             <div className="modal-col">
               <h4>
-                <Terminal size={14} /> Comandos OSC & HTTP
+                <Terminal size={14} /> {tr("Comandos OSC & HTTP")}
               </h4>
               <div className="endpoints-list">
                 {endpoints.map((ep, i) => (
@@ -157,7 +156,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
                         <button
                           className="code-copy-pill"
                           onClick={() => copy(ep.osc)}
-                          title="Copiar dirección OSC"
+                          title={tr("Copiar dirección OSC")}
                         >
                           <span>OSC: {ep.osc}</span>
                           {copiedText === ep.osc ? <Check size={11} /> : <Copy size={11} />}
@@ -166,7 +165,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
                       <button
                         className="code-copy-pill http"
                         onClick={() => copy(`http://127.0.0.1:${remoteInfo.httpPort}${ep.http}`)}
-                        title="Copiar URL HTTP completa"
+                        title={tr("Copiar URL HTTP completa")}
                       >
                         <span>HTTP: {ep.http}</span>
                         {copiedText?.endsWith(ep.http) ? <Check size={11} /> : <Copy size={11} />}
@@ -180,7 +179,7 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
             {/* Shortcuts & Live Log */}
             <div className="modal-col">
               <h4>
-                <Keyboard size={14} /> Atajos de Teclado en Directo
+                <Keyboard size={14} /> {tr("Atajos de Teclado en Directo")}
               </h4>
               <div className="shortcuts-grid">
                 {shortcuts.map((s, idx) => (
@@ -192,12 +191,12 @@ export const RemoteCompanionModal: React.FC<RemoteCompanionModalProps> = ({
               </div>
 
               <h4 style={{ marginTop: 14 }}>
-                <Radio size={14} /> Monitor de Comandos Recibidos ({logs.length})
+                <Radio size={14} /> {tr("Monitor de Comandos Recibidos (")}{logs.length})
               </h4>
               <div className="osc-log-box">
                 {logs.length === 0 ? (
                   <div className="osc-log-empty">
-                    Esperando paquetes OSC (UDP {remoteInfo.oscPort}) o peticiones HTTP (
+                    {tr("Esperando paquetes OSC (UDP")} {remoteInfo.oscPort}{tr(") o peticiones HTTP (")}
                     {remoteInfo.httpPort})...
                   </div>
                 ) : (

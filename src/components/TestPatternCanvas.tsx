@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { MosaicMode } from '../types/cue';
 
+import { tr } from '../i18n';
 interface TestPatternCanvasProps {
   showName?: string;
   label?: string;
@@ -109,10 +110,10 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
         ctx.fillStyle = '#10b981';
         ctx.font = `bold ${Math.round(h * 0.032)}px "Consolas", monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText('SALIDA 1 (IZQUIERDA)', w * 0.25, h * 0.12);
+        ctx.fillText(tr("SALIDA 1 (IZQUIERDA)"), w * 0.25, h * 0.12);
 
         ctx.fillStyle = '#38bdf8';
-        ctx.fillText('SALIDA 2 (DERECHA)', w * 0.75, h * 0.12);
+        ctx.fillText(tr("SALIDA 2 (DERECHA)"), w * 0.75, h * 0.12);
       } else if (mosaicMode === 'vertical_1x2') {
         ctx.strokeStyle = '#f59e0b';
         ctx.lineWidth = 3;
@@ -126,10 +127,10 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
         ctx.fillStyle = '#10b981';
         ctx.font = `bold ${Math.round(w * 0.025)}px "Consolas", monospace`;
         ctx.textAlign = 'left';
-        ctx.fillText('SALIDA 1 (SUPERIOR)', 36, h * 0.08);
+        ctx.fillText(tr("SALIDA 1 (SUPERIOR)"), 36, h * 0.08);
 
         ctx.fillStyle = '#38bdf8';
-        ctx.fillText('SALIDA 2 (INFERIOR)', 36, h * 0.58);
+        ctx.fillText(tr("SALIDA 2 (INFERIOR)"), 36, h * 0.58);
       }
 
       // SMPTE Color Bars in middle band
@@ -188,7 +189,7 @@ export const TestPatternCanvas: React.FC<TestPatternCanvasProps> = ({
 
       const autoLabel =
         label ||
-        `LIENZO DE SALIDA: ${canvasWidth} × ${canvasHeight} px (${mosaicMode.toUpperCase()})`;
+        tr("LIENZO DE SALIDA: {w} × {h} px ({mode})", { w: canvasWidth, h: canvasHeight, mode: mosaicMode.toUpperCase() });
       ctx.fillStyle = '#38bdf8';
       ctx.font = `600 ${Math.round(fontBase * 0.68)}px "Consolas", monospace`;
       ctx.fillText(autoLabel, w / 2, h * 0.748);

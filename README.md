@@ -1,47 +1,55 @@
 # PlayCue Studio (v1.6.1)
 
-Reproductor profesional de vídeo para eventos en directo en Windows, inspirado en el flujo de trabajo y diseño de **Mitti** y **PlaybackPro Plus**.
+Professional video player for live events on Windows, inspired by the workflow and design of **Mitti** and **PlaybackPro Plus**.
 
-## Novedades v1.6.1
+The app speaks **English, Spanish and Catalan**. It follows the Windows display language: Catalan systems get Catalan, Spanish systems get Spanish, and any other language gets English.
 
-- **Acción "IR A" al terminar**: un cue puede saltar a otro cue concreto cuando acaba (`END ACTION → IR A`), lo que permite cerrar bucles entre varios vídeos (A → B → A…). Remoto: `/cue/goto <n>` (OSC/HTTP).
-- **GPU siempre la más potente**: se detectan las gráficas del equipo y se usa la dedicada si existe, o la integrada si es la única. La app se registra en *Configuración gráfica de Windows* como "Alto rendimiento".
-- **Vúmetros reales** con Web Audio, ganancia por encima de 0 dB funcional, el negro de la acción BLACK se quita con el siguiente TAKE, timecode según los fps del vídeo y avisos de error de reproducción.
+## What's new in v1.6.1
 
-- **Blackout pausa el vídeo** y lo reanuda al quitarlo (PLAY también lo quita). **Freeze** congela la imagen en la salida mientras el clip sigue corriendo debajo (reloj y audio continúan). **ESC = limpiar salida**: detiene y descarga el programa (también en la ventana de salida); no activa el blackout.
-- **Cue List con multiselección**: Shift (rango), Ctrl (añadir/quitar), Ctrl+A, mover y eliminar varios a la vez (botón derecho o tecla Supr). *Locate* solo para un archivo.
-- **Configuración** (antes "Mosaico"): pantallas, modo de salida, **salida de audio** (Predeterminado del sistema por defecto) y lienzo virtual con la proporción real. La selección de pantalla ya no está en la barra superior.
-- **Sliders estilo macOS**, icono propio en exe/ventana/bandeja y **cierre con la X a la bandeja del sistema** (salir desde el icono de la bandeja → *Salir*).
+- **"Go to" end action**: a cue can jump to a specific cue when it ends (`END ACTION → GO TO`), so you can close loops between several videos (A → B → A…). Remote: `/cue/goto <n>` (OSC/HTTP).
+- **Always the most powerful GPU**: the app detects the installed graphics adapters and uses the dedicated one if present, or the integrated one if it is the only option. It registers itself in *Windows Graphics settings* as "High performance".
+- **Real VU meters** (Web Audio), working gain above 0 dB, the BLACK end action's black is cleared by the next TAKE, timecode that follows each video's fps, and playback error notices.
+- **Blackout pauses the video** and resumes it when released (PLAY also releases it). **Freeze** holds the picture on the output while the clip keeps running underneath (clock and audio continue). **ESC = clear output**: it stops and unloads the program (also from the output window) and does not trigger blackout.
+- **Cue List multi-select**: Shift (range), Ctrl (add/remove), Ctrl+A, move and delete several cues at once (right-click or the Del key). *Locate* only works for a single file.
+- **Settings** (formerly "Mosaic"): displays, output mode, **audio output** (System default is the base option) and a virtual canvas preview with the real aspect ratio. Display selection is no longer in the top bar.
+- **macOS-style sliders and scrollbars**, its own icon in the exe / window / tray, and **closing with the X sends the app to the system tray** (quit from the tray icon → *Quit*).
+- **Installer** (`PlayCue_Studio_Setup_<version>.exe`): if a version is already installed it installs over it, keeping your projects and settings. You can run the installer of an older version to go back. A portable build is also provided.
+- **Per-project log**: `%APPDATA%\PlayCue Studio\logs\<project>\<YYYY-MM-DD>.log` (startup, TAKE, blackout/freeze/ESC, video errors, unhandled errors, open/save failures). Files older than 30 days are deleted automatically. Quick access: tray icon → *Open logs folder*.
 
-- **Instalador** (`PlayCue_Studio_Setup_<versión>.exe`): si ya hay una versión instalada se instala encima conservando proyectos y ajustes; se puede instalar una versión anterior para volver atrás.
-- **Log por proyecto**: `%APPDATA%\PlayCue Studio\logs\<proyecto>\<AAAA-MM-DD>.log` (arranque, TAKE, blackout/freeze/ESC, errores de vídeo, errores no controlados, fallos de abrir/guardar). Los archivos de más de 30 días se borran solos. Acceso rápido: icono de la bandeja → *Abrir carpeta de logs*.
+## Main features (v1.3.0)
 
-## Características principales (v1.3.0)
+- **Output scaling, aspect ratio, zoom and a 90% blur background layer**:
+  - **True fullscreen**: automatically fits `1920x1080` videos to `2560x1440`, `4K` or custom LED formats.
+  - **Enlarged video + 90% blur underlay**: one-click option (`BLUR BACKGROUND 90%`) that creates a synchronized, full-screen, gaussian-blurred layer (adjustable blur, brightness and zoom) under the sharp original video.
+  - **Live aspect ratio and zoom control**: `Native`, `Fit to output`, `16:9`, `16:10`, `4:3`, `21:9`, `32:9`, `9:16`, `1:1`, `FIT / FILL / STRETCH` modes, **zoom (`50%` to `300%`)**, independent X/Y scale, X/Y position, and a button to apply the format to every video in the list.
+- **Dual monitors + central transition console**:
+  - `PREVIEW (PRV)` with visual `IN / OUT` trim, frame-by-frame stepping (`-1f / +1f`), pre-listening (*Audition*) and a `-10s` jump.
+  - `TAKE` with real-time transitions (`Cut`, `Cross-Dissolve / Mix`, `Dip to Black`, `Wipe`), `BLACKOUT`, `FREEZE` and an `SMPTE TEST PATTERN`.
+  - `PROGRAM (PGM)` with a dual-deck engine (`Deck A / Deck B`), a countdown clock with color alerts (`< 15s` amber, `< 5s` red), `-30s / -20s / -10s` buttons and real-time stereo L/R VU meters.
+- **Synchronized multi-display mosaic (v1.1.0)**:
+  - Real-time detection of every connected output, including **custom EDID formats** from LED processors (true physical pixel resolution, DPI scale and Hz).
+  - **Single output**, **Horizontal mosaic (`2×1`)**, **Vertical mosaic (`1×2`)** and **Dual mirror (`Clone 1+2`)** modes.
+  - **Single VRAM surface (*Spanned window*)**, NVIDIA-Mosaic style, with UV-region viewport slicing, output swapping (`1 ↔ 2`) and pixel *overlap*.
+- **Cue List and 4-tab inspector**:
+  - Per-clip end actions: `HOLD (pause at end)`, `BLACK (go to black)`, `LOOP`, `PLAY NEXT (auto-follow)`, `GO TO` and `STOP`.
+  - Audio gain in dB, audio/video *Fade In / Out*, geometry (*Fit / Fill / Stretch*, rotation, H/V mirror) and speed (`0.5x`–`2x`).
+- **Built-in FFmpeg & FFprobe**:
+  - Automatic codec analysis, thumbnail extraction, 1080p50 demo clip generation and conversion to a **Broadcast H.264 proxy (`-g 15`)**.
+- **Bitfocus Companion / StreamDeck remote control**:
+  - **OSC UDP** server (port `51000`) and **HTTP REST API** (port `51080`). A native Companion module is bundled.
 
-- **Escalado en Salida, Aspect Ratio, Zoom y Capa Fondo Blur 90% (v1.3.0)**:
-  - **Pantalla Completa Real**: Ajusta automáticamente vídeos `1920x1080` a salidas `2560x1440`, `4K` o formatos LED personalizados.
-  - **Capa Inferior con Vídeo Ampliado + Blur 90%**: Opción en 1 clic (`FONDO BLUR 90%`) para generar una capa inferior sincronizada con el propio vídeo ampliado a pantalla completa y desenfoque gaussiano al `90%` (ajustable en nivel de blur, brillo y zoom) con el vídeo en su formato original nítido por encima.
-  - **Control de Aspect Ratio y Zoom en Vivo**: Selección de relación de aspecto (`Nativo`, `Adaptar a Salida`, `16:9`, `16:10`, `4:3`, `21:9`, `32:9`, `9:16`, `1:1`), modos `FIT / FILL / STRETCH`, **Zoom (`50%` a `300%`)**, escala independiente X/Y, posición X/Y y botón para aplicar el formato a todos los vídeos de la escaleta.
-- **Doble Monitor en Cabina + Consola Central de Transición**:
-  - `PREVIEW (PRV)` con recorte visual `IN / OUT`, avance fotograma a fotograma (`-1f / +1f`), escucha previa (*Audition*) y salto `-10s`.
-  - `TAKE` con transiciones en tiempo real (`Cut`, `Cross-Dissolve / Mix`, `Dip to Black`, `Wipe`), `BLACKOUT`, `FREEZE` y `CARTA DE AJUSTE SMPTE`.
-  - `PROGRAM (PGM)` con motor Dual-Deck (`Deck A / Deck B`), reloj de cuenta atrás con alertas de color (`< 15s` ámbar, `< 5s` rojo), botones `-30s / -20s / -10s` y vúmetros estéreo L/R en tiempo real.
-- **Mosaico Multipantalla Síncrono (v1.1.0)**:
-  - Detección en tiempo real de todas las salidas conectadas a Windows, incluyendo **Formatos Custom EDID** de procesadores LED (resolución física real en píxeles, escala DPI y Hz).
-  - Modos **1 Salida Única**, **Mosaico Horizontal (`2×1`)**, **Mosaico Vertical (`1×2`)** y **Doble Espejo (`Clon 1+2`)**.
-  - Soporte de **Superficie Única en VRAM (*Spanned Window*)** estilo NVIDIA Mosaic y recorte por regiones UV (*Viewport Slicing*) con inversión de salidas (`1 ↔ 2`) y *Overlap* en píxeles.
-- **Escaleta / Cue List e Inspector de 4 Pestañas**:
-  - Acciones finales por clip: `HOLD (Pause at End)`, `BLACK (Ir a negro)`, `LOOP`, `PLAY NEXT (Auto-Follow)` y `STOP`.
-  - Ajustes de ganancia de audio en dB, *Fade In / Out* de audio y vídeo, geometría (*Fit / Fill / Stretch*, rotación, espejo H/V) y velocidad (`0.5x`–`2x`).
-- **FFmpeg & FFprobe Integrados**:
-  - Análisis automático de códecs, extracción de miniaturas, generación de clips demo 1080p50 y conversión a **Proxy H.264 Broadcast (`-g 15`)**.
-- **Control Remoto Bitfocus Companion / StreamDeck**:
-  - Servidor **OSC UDP** (puerto `51000`) y **API HTTP REST** (puerto `51080`).
+## Support
 
-## Desarrollo y Empaquetado
+Found a problem? Please report it on the project page: <https://github.com/mentirosodiyei/playcue-studio>
+
+## Development and packaging
 
 ```bash
 pnpm install
 pnpm run build
 pnpm run dist
 ```
+
+To test another language, start the app with `--lang=ca`, `--lang=es` or `--lang=en`.
+
+Author: David Redondo García.

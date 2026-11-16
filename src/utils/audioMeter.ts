@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * Real stereo level metering for <video> elements using the Web Audio API.
  *
@@ -45,7 +46,7 @@ export async function listAudioOutputs(): Promise<AudioOutputInfo[]> {
       .filter(
         (d) => d.kind === 'audiooutput' && d.deviceId !== 'default' && d.deviceId !== 'communications'
       )
-      .map((d, i) => ({ id: d.deviceId, label: d.label || `Salida de audio ${i + 1}` }));
+      .map((d, i) => ({ id: d.deviceId, label: d.label || tr("Salida de audio {n}", { n: i + 1 }) }));
   } catch {
     return [];
   }

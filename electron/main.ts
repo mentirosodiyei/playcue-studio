@@ -22,6 +22,7 @@ import {
   detectHardwareProfile,
   ConvertVideoOptions,
 } from './mediaTools';
+import { trm } from './i18n';
 import { RemoteControlServer, LiveShowTelemetry } from './osc';
 import { initLogger, setLogProject, writeLog, getLogsRoot } from './logger';
 
@@ -235,8 +236,8 @@ function createMainWindow() {
       trayHintShown = true;
       try {
         tray.displayBalloon({
-          title: 'PlayCue Studio sigue en ejecución',
-          content: 'La app continúa en segundo plano. Haz clic en el icono para mostrarla o usa "Salir" para cerrarla.',
+          title: trm('PlayCue Studio sigue en ejecución'),
+          content: trm('La app continúa en segundo plano. Haz clic en el icono para mostrarla o usa "Salir" para cerrarla.'),
           iconType: 'info',
         });
       } catch {}
@@ -273,20 +274,20 @@ function createTray() {
     tray.setToolTip('PlayCue Studio');
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Mostrar PlayCue Studio', click: () => showMainWindow() },
-        { label: 'Abrir carpeta de logs', click: () => void shell.openPath(getLogsRoot()) },
+        { label: trm('Mostrar PlayCue Studio'), click: () => showMainWindow() },
+        { label: trm('Abrir carpeta de logs'), click: () => void shell.openPath(getLogsRoot()) },
         { type: 'separator' },
         {
-          label: 'Salir',
+          label: trm('Salir'),
           click: async () => {
             const res = await dialog.showMessageBox({
               type: 'question',
-              buttons: ['Cancelar', 'Salir'],
+              buttons: [trm('Cancelar'), trm('Salir')],
               defaultId: 0,
               cancelId: 0,
-              title: 'Salir de PlayCue Studio',
-              message: '¿Cerrar PlayCue Studio?',
-              detail: 'Se detendrá la reproducción y se cerrarán las pantallas de salida.',
+              title: trm('Salir de PlayCue Studio'),
+              message: trm('¿Cerrar PlayCue Studio?'),
+              detail: trm('Se detendrá la reproducción y se cerrarán las pantallas de salida.'),
             });
             if (res.response === 1) {
               isQuitting = true;
@@ -565,7 +566,7 @@ function openOutputWindows(
         sliceY: 0,
         sliceWidth: totalPhysW,
         sliceHeight: totalPhysH,
-        label: `MOSAICO SPANNED (${totalPhysW}×${totalPhysH})`,
+        label: `${trm('MOSAICO SPANNED')} (${totalPhysW}×${totalPhysH})`,
       }
     );
     outputWindows.push(spannedWin);
@@ -610,7 +611,7 @@ function openOutputWindows(
         canvasWidth: totalPhysW,
         canvasHeight: totalPhysH,
         ...slice1,
-        label: `MOSAICO SALIDA 1 (${d1.physicalWidth}×${d1.physicalHeight})`,
+        label: `${trm('MOSAICO SALIDA 1')} (${d1.physicalWidth}×${d1.physicalHeight})`,
       }
     );
     outputWindows.push(w1);
@@ -626,7 +627,7 @@ function openOutputWindows(
           canvasWidth: totalPhysW,
           canvasHeight: totalPhysH,
           ...slice2,
-          label: `MOSAICO SALIDA 2 (${d2.physicalWidth}×${d2.physicalHeight})`,
+          label: `${trm('MOSAICO SALIDA 2')} (${d2.physicalWidth}×${d2.physicalHeight})`,
         }
       );
       outputWindows.push(w2);
@@ -842,7 +843,7 @@ ipcMain.handle('install-companion-module', () => {
     }
 
     if (!fs.existsSync(srcDir)) {
-      return { ok: false, error: 'No se encontró el paquete del módulo Companion.' };
+      return { ok: false, error: trm('No se encontró el paquete del módulo Companion.') };
     }
 
     fs.mkdirSync(path.join(targetDir, 'companion'), { recursive: true });
@@ -866,11 +867,11 @@ ipcMain.handle('install-companion-module', () => {
 ipcMain.handle('select-video-files', async () => {
   if (!mainWindow) return [];
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Añadir Archivos de Vídeo al Cue List',
+    title: trm('Añadir Archivos de Vídeo al Cue List'),
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
-        name: 'Archivos de Vídeo',
+        name: trm('Archivos de Vídeo'),
         extensions: [
           'mp4',
           'mov',
@@ -887,7 +888,7 @@ ipcMain.handle('select-video-files', async () => {
           'ogv',
         ],
       },
-      { name: 'Todos los archivos', extensions: ['*'] },
+      { name: trm('Todos los archivos'), extensions: ['*'] },
     ],
   });
   if (res.canceled) return [];
@@ -897,7 +898,7 @@ ipcMain.handle('select-video-files', async () => {
 ipcMain.handle('select-video-folder', async () => {
   if (!mainWindow) return [];
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Seleccionar Carpeta con Vídeos',
+    title: trm('Seleccionar Carpeta con Vídeos'),
     properties: ['openDirectory', 'multiSelections'],
   });
   if (res.canceled || res.filePaths.length === 0) return [];
@@ -923,14 +924,14 @@ ipcMain.handle('locate-file-in-folder', (_event, filePath: string) => {
 ipcMain.handle('relink-video-file', async (_event, oldName: string) => {
   if (!mainWindow) return null;
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: `Relinkear archivo: ${oldName}`,
+    title: `${trm('Relinkear archivo')}: ${oldName}`,
     properties: ['openFile'],
     filters: [
       {
-        name: 'Vídeo',
+        name: trm('Vídeo'),
         extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'mxf', 'm4v', 'wmv', 'mpg', 'ts'],
       },
-      { name: 'Todos los archivos', extensions: ['*'] },
+      { name: trm('Todos los archivos'), extensions: ['*'] },
     ],
   });
   if (res.canceled || res.filePaths.length === 0) return null;
@@ -1038,7 +1039,7 @@ ipcMain.handle('get-first-run-demo-clips', async () => {
 ipcMain.handle('save-show-file', async (_event, showDataJson: string, defaultName: string) => {
   if (!mainWindow) return null;
   const res = await dialog.showSaveDialog(mainWindow, {
-    title: 'Guardar Proyecto',
+    title: trm('Guardar Proyecto'),
     defaultPath: defaultName.endsWith('.cueshow') ? defaultName : `${defaultName}.cueshow`,
     filters: [{ name: 'PlayCue Show (*.cueshow)', extensions: ['cueshow', 'json'] }],
   });
@@ -1053,7 +1054,7 @@ ipcMain.handle('save-show-file', async (_event, showDataJson: string, defaultNam
 ipcMain.handle('open-show-file', async () => {
   if (!mainWindow) return null;
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Abrir Proyecto',
+    title: trm('Abrir Proyecto'),
     properties: ['openFile'],
     filters: [{ name: 'PlayCue Show (*.cueshow, *.json)', extensions: ['cueshow', 'json'] }],
   });
@@ -1070,6 +1071,15 @@ ipcMain.handle('log-set-project', (_event, name: string) => {
 ipcMain.handle('log-write', (_event, level: string, source: string, message: string) => {
   const lv = ['INFO', 'WARN', 'ERROR'].includes(level) ? level : 'INFO';
   writeLog(lv, `ui:${String(source).slice(0, 30)}`, String(message));
+});
+
+// Only the project page may be opened in the system browser
+ipcMain.handle('open-external', async (_event, url: string) => {
+  if (typeof url !== 'string' || !url.startsWith('https://github.com/mentirosodiyei/playcue-studio')) {
+    return false;
+  }
+  await shell.openExternal(url);
+  return true;
 });
 
 ipcMain.handle('open-logs-folder', async () => {

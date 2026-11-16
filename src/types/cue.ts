@@ -283,6 +283,7 @@ declare global {
       logSetProject: (name: string) => Promise<void>;
       logWrite: (level: string, source: string, message: string) => Promise<void>;
       openLogsFolder: () => Promise<string>;
+      openExternal: (url: string) => Promise<boolean>;
       loadAutosaveShow: () => Promise<string | null>;
       getPathForFile: (file: File) => string;
       onDisplaysUpdated: (cb: (displays: DisplayInfo[]) => void) => () => void;

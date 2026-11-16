@@ -30,6 +30,7 @@ import {
   END_ACTION_LABELS,
 } from '../utils/timecode';
 
+import { tr } from '../i18n';
 interface CueListProps {
   cues: VideoCue[];
   selectedCueId: string | null;
@@ -155,35 +156,35 @@ export const CueList: React.FC<CueListProps> = ({
         <div className="cuelist-toolbar-left">
           <div className="panel-section-title">
             <Film size={15} />
-            <span>CUE LIST ({cues.length})</span>
+            <span>{tr("CUE LIST (")}{cues.length})</span>
           </div>
           <span className="total-runtime-badge">
-            TOTAL: {formatTimecode(totalShowDuration, 25, true)}
+            {tr("TOTAL:")} {formatTimecode(totalShowDuration, 25, true)}
           </span>
           {selectedCueIds.length > 1 && (
             <div
               className="total-runtime-badge"
               style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              title="Selección múltiple: Shift = rango, Ctrl = añadir/quitar, Supr = eliminar"
+              title={tr("Selección múltiple: Shift = rango, Ctrl = añadir/quitar, Supr = eliminar")}
             >
-              <span>{selectedCueIds.length} seleccionados</span>
+              <span>{selectedCueIds.length} {tr("seleccionados")}</span>
               <button
                 className="row-icon-btn"
-                title="Subir selección"
+                title={tr("Subir selección")}
                 onClick={() => onMoveCues(selectedCueIds, -1)}
               >
                 <ArrowUp size={12} />
               </button>
               <button
                 className="row-icon-btn"
-                title="Bajar selección"
+                title={tr("Bajar selección")}
                 onClick={() => onMoveCues(selectedCueIds, 1)}
               >
                 <ArrowDown size={12} />
               </button>
               <button
                 className="row-icon-btn danger"
-                title="Eliminar selección"
+                title={tr("Eliminar selección")}
                 onClick={() => requestDelete(selectedCueIds)}
               >
                 <Trash2 size={12} />
@@ -194,7 +195,7 @@ export const CueList: React.FC<CueListProps> = ({
             <Search size={13} />
             <input
               type="text"
-              placeholder="Buscar vídeo en el Cue List..."
+              placeholder={tr("Buscar vídeo en el Cue List...")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -209,10 +210,10 @@ export const CueList: React.FC<CueListProps> = ({
                 e.stopPropagation();
                 setAddMenuOpen((prev) => !prev);
               }}
-              title="Añadir archivos de vídeo sueltos o carpetas completas al Cue List"
+              title={tr("Añadir archivos de vídeo sueltos o carpetas completas al Cue List")}
             >
               <Plus size={15} />
-              <span>Añadir Vídeos</span>
+              <span>{tr("Añadir Vídeos")}</span>
               <ChevronDown size={13} style={{ marginLeft: 2, opacity: 0.85 }} />
             </button>
 
@@ -227,8 +228,8 @@ export const CueList: React.FC<CueListProps> = ({
                 >
                   <FileVideo size={14} className="cyan-text" />
                   <div className="dropdown-item-text">
-                    <strong>Añadir Archivos...</strong>
-                    <span>Seleccionar uno o varios vídeos</span>
+                    <strong>{tr("Añadir Archivos...")}</strong>
+                    <span>{tr("Seleccionar uno o varios vídeos")}</span>
                   </div>
                 </button>
                 <div className="macos-dropdown-divider" />
@@ -241,8 +242,8 @@ export const CueList: React.FC<CueListProps> = ({
                 >
                   <FolderPlus size={14} className="cyan-text" />
                   <div className="dropdown-item-text">
-                    <strong>Añadir Carpeta...</strong>
-                    <span>Importar todos los vídeos de una carpeta</span>
+                    <strong>{tr("Añadir Carpeta...")}</strong>
+                    <span>{tr("Importar todos los vídeos de una carpeta")}</span>
                   </div>
                 </button>
               </div>
@@ -253,16 +254,16 @@ export const CueList: React.FC<CueListProps> = ({
 
       {/* Table Header */}
       <div className="cuelist-table-header">
-        <div className="col-status">ESTADO</div>
-        <div className="col-num"># CUE</div>
+        <div className="col-status">{tr("ESTADO")}</div>
+        <div className="col-num">{tr("# CUE")}</div>
         <div className="col-thumb">CLIP</div>
-        <div className="col-title">NOMBRE / FORMATO</div>
+        <div className="col-title">{tr("NOMBRE / FORMATO")}</div>
         <div className="col-inout">IN / OUT</div>
-        <div className="col-dur">DURACIÓN</div>
-        <div className="col-trans">TRANSICIÓN</div>
-        <div className="col-audio">AUDIO</div>
-        <div className="col-end">AL TERMINAR (END)</div>
-        <div className="col-actions">ACCIONES</div>
+        <div className="col-dur">{tr("DURACIÓN")}</div>
+        <div className="col-trans">{tr("TRANSICIÓN")}</div>
+        <div className="col-audio">{tr("AUDIO")}</div>
+        <div className="col-end">{tr("AL TERMINAR (END)")}</div>
+        <div className="col-actions">{tr("ACCIONES")}</div>
       </div>
 
       {/* Cue Rows */}
@@ -270,17 +271,17 @@ export const CueList: React.FC<CueListProps> = ({
         {filteredCues.length === 0 ? (
           <div className="cuelist-empty-state">
             <Film size={34} strokeWidth={1.3} />
-            <h3>Cue List vacío</h3>
+            <h3>{tr("Cue List vacío")}</h3>
             <p>
-              Arrastra archivos o carpetas de vídeo directamente aquí, o usa el botón{' '}
-              <strong>Añadir Vídeos</strong>.
+              {tr("Arrastra archivos o carpetas de vídeo directamente aquí, o usa el botón")}{' '}
+              <strong>{tr("Añadir Vídeos")}</strong>.
             </p>
             <div className="empty-state-buttons">
               <button className="toolbar-action-btn primary" onClick={onAddVideos}>
-                <FileVideo size={14} /> Añadir Archivos
+                <FileVideo size={14} /> {tr("Añadir Archivos")}
               </button>
               <button className="toolbar-action-btn secondary" onClick={onAddFolder}>
-                <FolderPlus size={14} /> Añadir Carpeta
+                <FolderPlus size={14} /> {tr("Añadir Carpeta")}
               </button>
             </div>
           </div>
@@ -424,7 +425,7 @@ export const CueList: React.FC<CueListProps> = ({
                           onRelinkCue(cue);
                         }}
                       >
-                        <Link size={11} /> RELINKEAR
+                        <Link size={11} /> {tr("RELINKEAR")}
                       </button>
                     )}
                     {cue.exists && cue.playbackError && (
@@ -433,7 +434,7 @@ export const CueList: React.FC<CueListProps> = ({
                         title={cue.playbackError}
                         style={{ cursor: 'default' }}
                       >
-                        ERROR DE REPRODUCCIÓN
+                        {tr("ERROR DE REPRODUCCIÓN")}
                       </span>
                     )}
                     {cue.exists && !cue.isNativeCompatible && !cue.proxyPath && (
@@ -443,26 +444,26 @@ export const CueList: React.FC<CueListProps> = ({
                           e.stopPropagation();
                           onOptimizeProxy(cue);
                         }}
-                        title="Convertir este vídeo a H.264 para reproducción nativa"
+                        title={tr("Convertir este vídeo a H.264 para reproducción nativa")}
                       >
                         <Wand2 size={11} />
                         {cue.proxyProgress !== undefined && cue.proxyProgress < 100
-                          ? `Convirtiendo ${cue.proxyProgress}%`
-                          : 'Convertir H.264'}
+                          ? tr("Convirtiendo {n}%", { n: cue.proxyProgress })
+                          : tr("Convertir H.264")}
                       </button>
                     )}
                   </div>
                   <div className="cue-meta-line">
                     <span>
-                      {cue.width}×{cue.height} • {cue.fps}fps • {cue.videoCodec.toUpperCase()}
+                      {cue.width}×{cue.height} • {cue.fps}{tr("fps •")} {cue.videoCodec.toUpperCase()}
                     </span>
                     {cue.audioChannels > 0 ? (
                       <span className="emerald-text">
-                        • AUDIO: {cue.audioCodec.toUpperCase()} ({cue.audioChannels}ch @{' '}
-                        {Math.round((cue.audioSampleRate || 48000) / 1000)}kHz)
+                        • {tr("AUDIO:")} {cue.audioCodec.toUpperCase()} ({cue.audioChannels}{tr("ch @")}{' '}
+                        {Math.round((cue.audioSampleRate || 48000) / 1000)}{tr("kHz)")}
                       </span>
                     ) : (
-                      <span>• SIN AUDIO</span>
+                      <span>{tr("• SIN AUDIO")}</span>
                     )}
                     {cue.playbackRate !== 1 && (
                       <span className="speed-tag">{cue.playbackRate}x</span>
@@ -499,7 +500,7 @@ export const CueList: React.FC<CueListProps> = ({
                       })
                     }
                   >
-                    <option value="cut">CUT (0s)</option>
+                    <option value="cut">{tr("CUT (0s)")}</option>
                     <option value="dissolve">MIX ({cue.transitionDuration}s)</option>
                     <option value="dipToBlack">DIP ({cue.transitionDuration}s)</option>
                     <option value="wipe">WIPE ({cue.transitionDuration}s)</option>
@@ -511,7 +512,7 @@ export const CueList: React.FC<CueListProps> = ({
                   <button
                     className={`row-mute-btn ${cue.muted ? 'muted' : ''}`}
                     onClick={() => onUpdateCue(cue.id, { muted: !cue.muted })}
-                    title="Mute / Unmute este clip"
+                    title={tr("Mute / Unmute este clip")}
                   >
                     {cue.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
                   </button>
@@ -538,12 +539,12 @@ export const CueList: React.FC<CueListProps> = ({
                       onUpdateCue(cue.id, { endAction: e.target.value as EndAction })
                     }
                   >
-                    <option value="hold">HOLD (Pausa Fin)</option>
-                    <option value="black">BLACK (Ir a Negro)</option>
-                    <option value="loop">LOOP (Bucle)</option>
-                    <option value="next">PLAY NEXT (Siguiente)</option>
-                    <option value="goto">IR A (Saltar a Cue)</option>
-                    <option value="stop">STOP (Limpiar)</option>
+                    <option value="hold">{tr("HOLD (Pausa Fin)")}</option>
+                    <option value="black">{tr("BLACK (Ir a Negro)")}</option>
+                    <option value="loop">{tr("LOOP (Bucle)")}</option>
+                    <option value="next">{tr("PLAY NEXT (Siguiente)")}</option>
+                    <option value="goto">{tr("IR A (Saltar a Cue)")}</option>
+                    <option value="stop">{tr("STOP (Limpiar)")}</option>
                   </select>
                   {cue.endAction === 'goto' && (
                     <select
@@ -554,10 +555,10 @@ export const CueList: React.FC<CueListProps> = ({
                         color: cue.gotoCueId ? END_ACTION_LABELS.goto.color : '#ef4444',
                       }}
                       value={cue.gotoCueId || ''}
-                      title="Cue al que se salta cuando este vídeo termina"
+                      title={tr("Cue al que se salta cuando este vídeo termina")}
                       onChange={(e) => onUpdateCue(cue.id, { gotoCueId: e.target.value || null })}
                     >
-                      <option value="">— Elegir Cue destino —</option>
+                      <option value="">{tr("— Elegir Cue destino —")}</option>
                       {cues.map((t) => (
                         <option key={t.id} value={t.id}>
                           → {t.cueNumber} · {t.name.slice(0, 28)}
@@ -572,14 +573,14 @@ export const CueList: React.FC<CueListProps> = ({
                   <button
                     className="row-icon-btn prv-btn"
                     onClick={() => onLoadToPreview(cue.id)}
-                    title="Cargar en Preview (PRV)"
+                    title={tr("Cargar en Preview (PRV)")}
                   >
                     <Eye size={13} />
                   </button>
                   <button
                     className="row-icon-btn take-btn"
                     onClick={() => onTakeCueToProgram(cue.id)}
-                    title="Lanzar directamente a Program (TAKE)"
+                    title={tr("Lanzar directamente a Program (TAKE)")}
                   >
                     <Play size={13} />
                   </button>
@@ -587,7 +588,7 @@ export const CueList: React.FC<CueListProps> = ({
                     className="row-icon-btn"
                     onClick={() => onMoveCues(rowGroup, -1)}
                     disabled={!canMoveUp}
-                    title={rowGroup.length > 1 ? 'Subir los Cues seleccionados' : 'Subir Cue'}
+                    title={rowGroup.length > 1 ? tr("Subir los Cues seleccionados") : tr("Subir Cue")}
                   >
                     <ArrowUp size={13} />
                   </button>
@@ -595,14 +596,14 @@ export const CueList: React.FC<CueListProps> = ({
                     className="row-icon-btn"
                     onClick={() => onMoveCues(rowGroup, 1)}
                     disabled={!canMoveDown}
-                    title={rowGroup.length > 1 ? 'Bajar los Cues seleccionados' : 'Bajar Cue'}
+                    title={rowGroup.length > 1 ? tr("Bajar los Cues seleccionados") : tr("Bajar Cue")}
                   >
                     <ArrowDown size={13} />
                   </button>
                   <button
                     className="row-icon-btn"
                     onClick={() => onDuplicateCue(cue.id)}
-                    title="Duplicar Cue"
+                    title={tr("Duplicar Cue")}
                   >
                     <Copy size={13} />
                   </button>
@@ -611,8 +612,8 @@ export const CueList: React.FC<CueListProps> = ({
                     onClick={() => requestDelete(rowGroup)}
                     title={
                       rowGroup.length > 1
-                        ? `Eliminar los ${rowGroup.length} Cues seleccionados`
-                        : 'Delete (Eliminar del Cue List)'
+                        ? tr("Eliminar los {n} Cues seleccionados", { n: rowGroup.length })
+                        : tr("Delete (Eliminar del Cue List)")
                     }
                   >
                     <Trash2 size={13} />
@@ -643,7 +644,7 @@ export const CueList: React.FC<CueListProps> = ({
                 }}
               >
                 <FolderOpen size={14} className="cyan-text" />
-                <span>Locate (Abrir en carpeta)</span>
+                <span>{tr("Locate (Abrir en carpeta)")}</span>
               </button>
               <div className="macos-dropdown-divider" />
             </>
@@ -659,8 +660,8 @@ export const CueList: React.FC<CueListProps> = ({
             <Trash2 size={14} />
             <span>
               {selectedCueIds.length > 1
-                ? `Eliminar ${selectedCueIds.length} Cues seleccionados`
-                : 'Delete (Borrar de la app)'}
+                ? tr("Eliminar {n} Cues seleccionados", { n: selectedCueIds.length })
+                : tr("Delete (Borrar de la app)")}
             </span>
           </button>
         </div>
@@ -678,29 +679,27 @@ export const CueList: React.FC<CueListProps> = ({
           >
             <h4>
               {cuesToConfirmDelete.length > 1
-                ? `¿Eliminar ${cuesToConfirmDelete.length} vídeos del Cue List?`
-                : '¿Eliminar vídeo del Cue List?'}
+                ? tr("¿Eliminar {n} vídeos del Cue List?", { n: cuesToConfirmDelete.length })
+                : tr("¿Eliminar vídeo del Cue List?")}
             </h4>
             <p>
               {cuesToConfirmDelete.length > 1 ? (
                 <>
-                  Se eliminarán <strong>{cuesToConfirmDelete.length} vídeos</strong> únicamente de
-                  la lista de la aplicación.
+                  {tr("Se eliminarán")} <strong>{cuesToConfirmDelete.length} {tr("vídeos")}</strong> {tr("únicamente de la lista de la aplicación.")}
                 </>
               ) : (
                 <>
-                  Se eliminará <strong>"{cuesToConfirmDelete[0].name}"</strong> únicamente de la
-                  lista de la aplicación.
+                  {tr("Se eliminará")} <strong>"{cuesToConfirmDelete[0].name}"</strong> {tr("únicamente de la lista de la aplicación.")}
                 </>
               )}{' '}
-              Los archivos originales <strong>no se borrarán</strong> de su carpeta.
+              {tr("Los archivos originales")} <strong>{tr("no se borrarán")}</strong> {tr("de su carpeta.")}
             </p>
             <div className="confirm-modal-actions">
               <button
                 className="inspector-action-btn"
                 onClick={() => setCuesToConfirmDelete(null)}
               >
-                Cancelar
+                {tr("Cancelar")}
               </button>
               <button
                 className="inspector-action-btn danger-fill"
@@ -711,7 +710,7 @@ export const CueList: React.FC<CueListProps> = ({
                 }}
               >
                 <Trash2 size={13} />
-                <span>Delete</span>
+                <span>{tr("Delete")}</span>
               </button>
             </div>
           </div>

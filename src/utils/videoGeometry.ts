@@ -1,6 +1,7 @@
 import React from 'react';
 import { AspectRatioMode, ScaleMode } from '../types/cue';
 
+import { tr } from '../i18n';
 export interface AspectRatioOption {
   id: AspectRatioMode;
   label: string;
@@ -9,15 +10,15 @@ export interface AspectRatioOption {
 }
 
 export const ASPECT_RATIO_OPTIONS: AspectRatioOption[] = [
-  { id: 'native', label: 'Original del Vídeo (Nativo)', shortLabel: 'Nativo', ratio: null },
-  { id: 'output', label: 'Ajustar a Lienzo de Salida (100%)', shortLabel: 'Salida', ratio: null },
-  { id: '16:9', label: '16:9 Widescreen', shortLabel: '16:9', ratio: 16 / 9 },
-  { id: '16:10', label: '16:10 WUXGA', shortLabel: '16:10', ratio: 16 / 10 },
-  { id: '4:3', label: '4:3 Clásico', shortLabel: '4:3', ratio: 4 / 3 },
-  { id: '21:9', label: '21:9 Ultrawide', shortLabel: '21:9', ratio: 21 / 9 },
-  { id: '32:9', label: '32:9 Dual Mosaico 2×1', shortLabel: '32:9', ratio: 32 / 9 },
-  { id: '9:16', label: '9:16 Vertical', shortLabel: '9:16', ratio: 9 / 16 },
-  { id: '1:1', label: '1:1 Cuadrado', shortLabel: '1:1', ratio: 1 },
+  { id: 'native', label: tr("Original del Vídeo (Nativo)"), shortLabel: tr("Nativo"), ratio: null },
+  { id: 'output', label: tr("Ajustar a Lienzo de Salida (100%)"), shortLabel: tr("Salida"), ratio: null },
+  { id: '16:9', label: tr("16:9 Widescreen"), shortLabel: '16:9', ratio: 16 / 9 },
+  { id: '16:10', label: tr("16:10 WUXGA"), shortLabel: '16:10', ratio: 16 / 10 },
+  { id: '4:3', label: tr("4:3 Clásico"), shortLabel: '4:3', ratio: 4 / 3 },
+  { id: '21:9', label: tr("21:9 Ultrawide"), shortLabel: '21:9', ratio: 21 / 9 },
+  { id: '32:9', label: tr("32:9 Dual Mosaico 2×1"), shortLabel: '32:9', ratio: 32 / 9 },
+  { id: '9:16', label: tr("9:16 Vertical"), shortLabel: '9:16', ratio: 9 / 16 },
+  { id: '1:1', label: tr("1:1 Cuadrado"), shortLabel: '1:1', ratio: 1 },
 ];
 
 export interface GeometryParams {
