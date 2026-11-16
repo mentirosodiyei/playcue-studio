@@ -189,6 +189,17 @@ export interface OutputSyncState {
   syncSeq: number;
 }
 
+/** Scheduled start of the show (saved inside the show file). */
+export interface AutoStartConfig {
+  mode: 'off' | 'onLaunch' | 'atDateTime' | 'daily';
+  /** YYYY-MM-DD (only for atDateTime) */
+  date: string;
+  /** HH:MM, 24 h */
+  time: string;
+}
+
+export const DEFAULT_AUTOSTART: AutoStartConfig = { mode: 'off', date: '', time: '09:00' };
+
 export interface ShowFileSchema {
   version: string;
   showName: string;
@@ -197,6 +208,7 @@ export interface ShowFileSchema {
   defaultTransitionType: TransitionType;
   defaultTransitionDuration: number;
   mosaicConfig?: MosaicConfig;
+  autoStart?: AutoStartConfig;
   cues: VideoCue[];
 }
 
@@ -284,6 +296,13 @@ declare global {
       logWrite: (level: string, source: string, message: string) => Promise<void>;
       openLogsFolder: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;
+      checkMediaFile: (filePath: string) => Promise<{
+        state: 'ok' | 'missing' | 'noaccess' | 'empty' | 'notfile' | 'error';
+        size?: number;
+        code?: string;
+      }>;
+      getLoginItem: () => Promise<{ supported: boolean; openAtLogin: boolean }>;
+      setLoginItem: (on: boolean) => Promise<boolean>;
       getUpdateSettings: () => Promise<{ auto: boolean; version: string }>;
       setAutoUpdateCheck: (auto: boolean) => Promise<boolean>;
       checkForUpdates: () => Promise<{

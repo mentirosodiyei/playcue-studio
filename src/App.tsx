@@ -21,6 +21,8 @@ import {
   MosaicConfig,
   ConvertVideoOptions,
   HardwareProfileInfo,
+  AutoStartConfig,
+  DEFAULT_AUTOSTART,
 } from './types/cue';
 import {
   formatTimecode,
@@ -35,6 +37,7 @@ import {
   listAudioOutputs,
 } from './utils/audioMeter';
 import { logEvent } from './utils/log';
+import { describePlaybackError } from './utils/playbackError';
 import { OutputView } from './components/OutputView';
 import { DualMonitors } from './components/DualMonitors';
 import { CueList } from './components/CueList';
@@ -88,6 +91,12 @@ const OperatorConsole: React.FC = () => {
   const [previewCueId, setPreviewCueId] = useState<string | null>(null);
   const [programCueId, setProgramCueId] = useState<string | null>(null);
   const initialLoadDoneRef = useRef<boolean>(false);
+  // Scheduled start of the show (stored inside the show file)
+  const [autoStart, setAutoStart] = useState<AutoStartConfig>(DEFAULT_AUTOSTART);
+  const autoStartRef = useRef<AutoStartConfig>(DEFAULT_AUTOSTART);
+  autoStartRef.current = autoStart;
+  const launchStartPendingRef = useRef<boolean>(false);
+  const appStartedAtRef = useRef<number>(Date.now());
 
   // Resizable Workspace Splitters (Monitors vs CueList height, CueList vs Inspector width)
   const workspaceRef = useRef<HTMLDivElement | null>(null);
@@ -365,6 +374,11 @@ const OperatorConsole: React.FC = () => {
             if (parsed.mosaicConfig) {
               setMosaicConfig(parsed.mosaicConfig);
             }
+            if (parsed.autoStart) {
+              setAutoStart({ ...DEFAULT_AUTOSTART, ...parsed.autoStart });
+              // restoring the show at app launch: evaluate "start when the app opens / late start" once
+              launchStartPendingRef.current = parsed.autoStart.mode !== 'off';
+            }
             if (parsed.cues.length > 0) {
               setSelectedCueId(parsed.cues[0].id);
               setPreviewCueId(parsed.cues[0].id);
@@ -507,12 +521,13 @@ const OperatorConsole: React.FC = () => {
         defaultTransitionType: transitionType,
         defaultTransitionDuration: transitionDuration,
         mosaicConfig,
+        autoStart,
         cues,
       };
       window.electronAPI?.autosaveShow(JSON.stringify(schema, null, 2));
     }, 800);
     return () => clearTimeout(timer);
-  }, [cues, showName, masterVolume, transitionType, transitionDuration, mosaicConfig]);
+  }, [cues, showName, masterVolume, transitionType, transitionDuration, mosaicConfig, autoStart]);
 
   // Load cue into Preview player when previewCueId changes
   useEffect(() => {
@@ -585,18 +600,28 @@ const OperatorConsole: React.FC = () => {
     const cleanups: (() => void)[] = [];
     for (const { el, getId } of entries) {
       if (!el) continue;
-      const onError = () => {
+      const onError = async () => {
         if (!el.getAttribute('src')) return; // unloading a deck triggers a benign error
         const id = getId();
         if (!id) return;
-        const code = el.error?.code ?? 0;
-        const msg = tr("No se pudo reproducir este vídeo (código {code}{detail}). Prueba a convertirlo a H.264.", {
-          code,
-          detail: el.error?.message ? `: ${el.error.message}` : '',
-        });
-        setCues((prev) => prev.map((c) => (c.id === id ? { ...c, playbackError: msg } : c)));
         const failing = cuesRef.current.find((c) => c.id === id);
-        logEvent('ERROR', 'video', `${failing?.name ?? id} (${failing?.filePath ?? '?'}): ${msg}`);
+        const mediaErr = el.error ? { code: el.error.code, message: el.error.message } : null;
+        const playedPath = failing ? failing.proxyPath || failing.filePath : '';
+        // Find out what really happened: is the file missing, unreadable, empty, or a codec problem?
+        let check = null;
+        try {
+          check = playedPath ? await window.electronAPI?.checkMediaFile?.(playedPath) ?? null : null;
+        } catch {}
+        const msg = describePlaybackError(failing, mediaErr, check, playedPath);
+        const markMissing = check?.state === 'missing' && !!failing && playedPath === failing.filePath;
+        setCues((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, playbackError: msg, ...(markMissing ? { exists: false } : {}) } : c))
+        );
+        logEvent(
+          'ERROR',
+          'video',
+          `${failing?.name ?? id} (${playedPath || '?'}) [media code ${mediaErr?.code ?? '-'}, file ${check?.state ?? '?'}]: ${msg.replace(/\n/g, ' | ')}`
+        );
       };
       const onLoaded = () => {
         const id = getId();
@@ -1884,6 +1909,7 @@ const OperatorConsole: React.FC = () => {
         defaultTransitionType: transitionType,
         defaultTransitionDuration: transitionDuration,
         mosaicConfig,
+        autoStart,
         cues,
       };
       await window.electronAPI.saveShowFile(JSON.stringify(schema, null, 2), showName);
@@ -1911,6 +1937,9 @@ const OperatorConsole: React.FC = () => {
       if (parsed.mosaicConfig) {
         setMosaicConfig(parsed.mosaicConfig);
       }
+      // A show opened by hand only arms future start times (no late start / no start-on-open)
+      launchStartPendingRef.current = false;
+      setAutoStart({ ...DEFAULT_AUTOSTART, ...(parsed.autoStart || {}) });
       setCues(parsed.cues);
       setPreviewCueId(parsed.cues.length > 0 ? parsed.cues[0].id : null);
       setSelectedCueId(parsed.cues.length > 0 ? parsed.cues[0].id : null);
@@ -1931,6 +1960,8 @@ const OperatorConsole: React.FC = () => {
     setProgramCueId(null);
     setSelectedCueId(null);
     setShowName(tr("Nuevo Show"));
+    launchStartPendingRef.current = false;
+    setAutoStart(DEFAULT_AUTOSTART);
   };
 
   const handleToggleOutputWindow = async (windowed = false, forceOpen = false) => {
@@ -1951,6 +1982,99 @@ const OperatorConsole: React.FC = () => {
     const list = await window.electronAPI.getDisplays();
     setDisplays(list);
   };
+
+  // ---- Scheduled show start: enable the output screens and TAKE the first cue ----
+  const runAutoStart = async (reason: string) => {
+    logEvent('INFO', 'autostart', `Inicio automático del show (${reason})`);
+    try {
+      await handleToggleOutputWindow(false, true);
+    } catch (e: any) {
+      logEvent('ERROR', 'autostart', `No se pudo activar la salida: ${e?.message || e}`);
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+    const first = cuesRef.current[0];
+    if (!first) {
+      logEvent('WARN', 'autostart', 'El show no tiene cues');
+      return;
+    }
+    triggerTakeCue(first.id, true);
+  };
+  const runAutoStartRef = useRef(runAutoStart);
+  runAutoStartRef.current = runAutoStart;
+
+  useEffect(() => {
+    const LATE_START_LIMIT_MS = 12 * 60 * 60 * 1000;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const wasFired = (k: string) => {
+      try {
+        return localStorage.getItem('playcue.autostart.fired') === k;
+      } catch {
+        return false;
+      }
+    };
+    const markFired = (k: string) => {
+      try {
+        localStorage.setItem('playcue.autostart.fired', k);
+      } catch {}
+    };
+    const targetFor = (cfg: AutoStartConfig, now: Date): Date | null => {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(cfg.time || '');
+      if (!m) return null;
+      if (cfg.mode === 'daily') {
+        const t = new Date(now);
+        t.setHours(Number(m[1]), Number(m[2]), 0, 0);
+        return t;
+      }
+      if (cfg.mode === 'atDateTime') {
+        const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cfg.date || '');
+        if (!d) return null;
+        return new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(m[1]), Number(m[2]), 0, 0);
+      }
+      return null;
+    };
+    let last = Date.now();
+    const tick = () => {
+      const nowMs = Date.now();
+      const now = new Date(nowMs);
+      const cfg = autoStartRef.current;
+      if (cfg.mode === 'off' || cuesRef.current.length === 0) {
+        last = nowMs;
+        return;
+      }
+      // Evaluated once, a few seconds after the app opened (displays and decks are ready by then)
+      if (launchStartPendingRef.current && nowMs - appStartedAtRef.current > 6000) {
+        launchStartPendingRef.current = false;
+        if (cfg.mode === 'onLaunch') {
+          void runAutoStartRef.current('al abrir la app');
+        } else {
+          const t = targetFor(cfg, now);
+          const key = t ? `${cfg.mode}:${dayKey(t)}:${cfg.time}` : '';
+          if (t && t.getTime() <= nowMs && nowMs - t.getTime() <= LATE_START_LIMIT_MS && !wasFired(key)) {
+            markFired(key);
+            void runAutoStartRef.current('hora ya pasada al abrir: arranque inmediato');
+          } else if (t && t.getTime() <= nowMs) {
+            logEvent('INFO', 'autostart', 'Hora programada ya pasada al abrir la app: no se inicia');
+          }
+        }
+        last = nowMs;
+        return;
+      }
+      if (cfg.mode !== 'onLaunch') {
+        const t = targetFor(cfg, now);
+        if (t && last < t.getTime() && t.getTime() <= nowMs) {
+          const key = `${cfg.mode}:${dayKey(t)}:${cfg.time}`;
+          if (!wasFired(key)) {
+            markFired(key);
+            void runAutoStartRef.current('hora programada');
+          }
+        }
+      }
+      last = nowMs;
+    };
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Drag and drop files or folders onto the app
   const handleDropFiles = async (e: React.DragEvent) => {
@@ -2476,6 +2600,8 @@ const OperatorConsole: React.FC = () => {
         audioDevices={audioDevices}
         audioOutputId={audioOutputId}
         onChangeAudioOutput={handleChangeAudioOutput}
+        autoStart={autoStart}
+        onChangeAutoStart={setAutoStart}
         onRefreshDisplays={handleRefreshDisplays}
         onApplyAndLaunchOutput={(windowed) => {
           handleToggleOutputWindow(!!windowed, true);

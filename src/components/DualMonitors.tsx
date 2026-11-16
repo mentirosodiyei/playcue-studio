@@ -38,6 +38,31 @@ import {
 import { TestPatternCanvas } from './TestPatternCanvas';
 
 import { tr } from '../i18n';
+import { splitPlaybackError } from '../utils/playbackError';
+
+/** Red overlay over a monitor explaining exactly why a clip does not play. */
+const ErrorOverlay: React.FC<{ message: string }> = ({ message }) => {
+  const { headline, detail } = splitPlaybackError(message);
+  return (
+    <div className="missing-overlay" style={{ padding: 14, textAlign: 'center', overflow: 'auto' }}>
+      <span style={{ fontSize: 13 }}>{headline}</span>
+      <small
+        style={{
+          marginTop: 6,
+          fontWeight: 500,
+          letterSpacing: 0,
+          color: '#fecaca',
+          maxWidth: 520,
+          lineHeight: 1.4,
+          wordBreak: 'break-word',
+        }}
+      >
+        {detail}
+      </small>
+    </div>
+  );
+};
+
 interface DualMonitorsProps {
   previewCue: VideoCue | null;
   programCue: VideoCue | null;
@@ -611,6 +636,9 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <small>{previewCue.filePath}</small>
               </div>
             )}
+            {previewCue && previewCue.exists && previewCue.playbackError && (
+              <ErrorOverlay message={previewCue.playbackError} />
+            )}
           </div>
 
           <div className="viewport-overlay-tc left">
@@ -1005,6 +1033,10 @@ export const DualMonitors: React.FC<DualMonitorsProps> = ({
                 <div className="blackout-viewport-banner">
                   <span>{tr("BLACKOUT ACTIVO (SALIDA EN NEGRO)")}</span>
                 </div>
+              )}
+
+              {programCue?.playbackError && !isBlackout && (
+                <ErrorOverlay message={programCue.playbackError} />
               )}
 
               {isFrozen && !isBlackout && (

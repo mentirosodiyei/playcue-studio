@@ -12,7 +12,7 @@ import {
   ExternalLink,
   Monitor as MonitorIcon,
 } from 'lucide-react';
-import { DisplayInfo, MosaicConfig, MosaicMode } from '../types/cue';
+import { DisplayInfo, MosaicConfig, MosaicMode, AutoStartConfig } from '../types/cue';
 
 import { tr } from '../i18n';
 
@@ -34,6 +34,8 @@ interface MosaicSetupModalProps {
   /** '' = system default output */
   audioOutputId: string;
   onChangeAudioOutput: (deviceId: string) => void;
+  autoStart: AutoStartConfig;
+  onChangeAutoStart: (next: AutoStartConfig) => void;
   onChangeMosaicConfig: (next: MosaicConfig) => void;
   onRefreshDisplays: () => void;
   onApplyAndLaunchOutput: (windowed?: boolean) => void;
@@ -107,6 +109,92 @@ const UpdateSection: React.FC = () => {
   );
 };
 
+/** Scheduled show start (saved with the show) + start the app with the system. */
+const AutoStartSection: React.FC<{
+  autoStart: AutoStartConfig;
+  onChange: (next: AutoStartConfig) => void;
+}> = ({ autoStart, onChange }) => {
+  const [login, setLogin] = React.useState<{ supported: boolean; openAtLogin: boolean }>({
+    supported: false,
+    openAtLogin: false,
+  });
+  React.useEffect(() => {
+    void window.electronAPI?.getLoginItem?.().then((s) => s && setLogin(s));
+  }, []);
+
+  const set = (patch: Partial<AutoStartConfig>) => onChange({ ...autoStart, ...patch });
+  const needsDate = autoStart.mode === 'atDateTime';
+  const needsTime = autoStart.mode === 'atDateTime' || autoStart.mode === 'daily';
+  const hint =
+    autoStart.mode === 'onLaunch'
+      ? tr('Al abrir la aplicación se activarán las salidas y se lanzará el primer cue.')
+      : needsTime
+      ? tr('A esa hora se activarán las salidas y se lanzará el primer cue. La app debe estar abierta. Se guarda con el show.')
+      : '';
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <label className="insp-label">{tr('INICIO AUTOMÁTICO DEL SHOW')}</label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
+        <select
+          className="insp-select"
+          style={{ flex: '1 1 220px', minWidth: 0 }}
+          value={autoStart.mode}
+          onChange={(e) => set({ mode: e.target.value as AutoStartConfig['mode'] })}
+        >
+          <option value="off">{tr('Manual (no iniciar solo)')}</option>
+          <option value="onLaunch">{tr('Al abrir la aplicación')}</option>
+          <option value="atDateTime">{tr('En una fecha y hora concretas')}</option>
+          <option value="daily">{tr('Todos los días a una hora')}</option>
+        </select>
+        {needsDate && (
+          <input
+            className="insp-select"
+            type="date"
+            style={{ flex: '0 0 auto' }}
+            value={autoStart.date}
+            onChange={(e) => set({ date: e.target.value })}
+          />
+        )}
+        {needsTime && (
+          <input
+            className="insp-select"
+            type="time"
+            style={{ flex: '0 0 auto' }}
+            value={autoStart.time}
+            onChange={(e) => set({ time: e.target.value })}
+          />
+        )}
+      </div>
+      {hint && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{hint}</div>}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginTop: 10,
+          fontSize: 12,
+          cursor: login.supported ? 'pointer' : 'not-allowed',
+          opacity: login.supported ? 1 : 0.5,
+        }}
+        title={login.supported ? '' : tr('Solo disponible en la versión instalada')}
+      >
+        <input
+          type="checkbox"
+          disabled={!login.supported}
+          checked={login.openAtLogin}
+          onChange={(e) => {
+            void window.electronAPI
+              ?.setLoginItem?.(e.target.checked)
+              .then((v) => setLogin((p) => ({ ...p, openAtLogin: !!v })));
+          }}
+        />
+        {tr('Iniciar la aplicación al arrancar el sistema')}
+      </label>
+    </div>
+  );
+};
+
 export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
   isOpen,
   onClose,
@@ -117,6 +205,8 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
   audioDevices,
   audioOutputId,
   onChangeAudioOutput,
+  autoStart,
+  onChangeAutoStart,
   onChangeMosaicConfig,
   onRefreshDisplays,
   onApplyAndLaunchOutput,
@@ -553,6 +643,7 @@ export const MosaicSetupModal: React.FC<MosaicSetupModalProps> = ({
             </button>
           </div>
 
+          <AutoStartSection autoStart={autoStart} onChange={onChangeAutoStart} />
           <UpdateSection />
 
           {/* Credits */}

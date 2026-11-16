@@ -1,4 +1,4 @@
-# Módulo Bitfocus Companion para PlayCue Studio (v1.6.2)
+# Módulo Bitfocus Companion para PlayCue Studio (v1.6.3)
 
 Controla **PlayCue Studio** en directo desde Bitfocus Companion / Elgato StreamDeck con telemetría bidireccional en tiempo real, nombres dinámicos de vídeos, cuenta atrás con avisos de color y presets listos para arrastrar.
 

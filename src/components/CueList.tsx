@@ -31,6 +31,7 @@ import {
 } from '../utils/timecode';
 
 import { tr } from '../i18n';
+import { splitPlaybackError } from '../utils/playbackError';
 interface CueListProps {
   cues: VideoCue[];
   selectedCueId: string | null;
@@ -434,7 +435,7 @@ export const CueList: React.FC<CueListProps> = ({
                         title={cue.playbackError}
                         style={{ cursor: 'default' }}
                       >
-                        {tr("ERROR DE REPRODUCCIÓN")}
+                        {splitPlaybackError(cue.playbackError).headline}
                       </span>
                     )}
                     {cue.exists && !cue.isNativeCompatible && !cue.proxyPath && (

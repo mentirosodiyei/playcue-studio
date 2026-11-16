@@ -838,6 +838,39 @@ ipcMain.on('update-telemetry', (_event, telemetry: Partial<LiveShowTelemetry>) =
   remoteServer?.updateTelemetry(telemetry);
 });
 
+// Start with the system (Windows Run key / macOS login item). The portable build is a self-extracting
+// exe, so register the portable file itself rather than the temporary extracted executable.
+const loginItemOptions = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
+ipcMain.handle('get-login-item', () => ({
+  supported: app.isPackaged,
+  openAtLogin: app.isPackaged ? app.getLoginItemSettings(loginItemOptions()).openAtLogin : false,
+}));
+ipcMain.handle('set-login-item', (_event, on: boolean) => {
+  if (!app.isPackaged) return false;
+  app.setLoginItemSettings({ openAtLogin: !!on, ...loginItemOptions() });
+  writeLog('INFO', 'app', `Start with system: ${on ? 'ON' : 'OFF'}`);
+  return app.getLoginItemSettings(loginItemOptions()).openAtLogin;
+});
+
+// Diagnoses a media file that failed to play: missing / unreadable / empty / fine
+ipcMain.handle('check-media-file', (_event, filePath: string) => {
+  try {
+    const st = fs.statSync(filePath);
+    if (!st.isFile()) return { state: 'notfile' };
+    try {
+      fs.accessSync(filePath, fs.constants.R_OK);
+    } catch {
+      return { state: 'noaccess' };
+    }
+    if (st.size === 0) return { state: 'empty', size: 0 };
+    return { state: 'ok', size: st.size };
+  } catch (e: any) {
+    if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') return { state: 'missing', code: e.code };
+    if (e?.code === 'EACCES' || e?.code === 'EPERM') return { state: 'noaccess', code: e.code };
+    return { state: 'error', code: e?.code || String(e) };
+  }
+});
+
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('update-get-settings', () => ({ auto: getUpdateSettings().auto, version: app.getVersion() }));
 ipcMain.handle('update-set-auto', (_event, auto: boolean) => {

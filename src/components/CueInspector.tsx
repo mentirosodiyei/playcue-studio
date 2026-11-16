@@ -31,6 +31,7 @@ import {
 import { ASPECT_RATIO_OPTIONS, computeVideoBox } from '../utils/videoGeometry';
 
 import { tr } from '../i18n';
+import { splitPlaybackError } from '../utils/playbackError';
 interface CueInspectorProps {
   cue: VideoCue | null;
   allCues?: VideoCue[];
@@ -169,6 +170,28 @@ export const CueInspector: React.FC<CueInspectorProps> = ({
       </div>
 
       <div className="inspector-body">
+        {cue.playbackError && (
+          <div
+            style={{
+              margin: '0 0 10px',
+              padding: '8px 10px',
+              border: '1px solid #ef4444',
+              background: 'rgba(239, 68, 68, 0.12)',
+              borderRadius: 6,
+              color: '#fecaca',
+              fontSize: 11,
+              lineHeight: 1.45,
+              userSelect: 'text',
+            }}
+          >
+            <div style={{ fontWeight: 800, color: '#f87171', marginBottom: 2 }}>
+              {splitPlaybackError(cue.playbackError).headline}
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {splitPlaybackError(cue.playbackError).detail}
+            </div>
+          </div>
+        )}
         {/* ================= TAB 1: VIDEO, AR, NUMERIC GEOMETRY, CODEC INFO & BLUR AT BOTTOM ================= */}
         {activeTab === 'video' && (
           <div className="insp-section-stack">
